@@ -247,6 +247,8 @@ class SiteRenderer:
 
     def _alternates(self, db: Session, entry: Entry, coll: CollectionDef) -> list[dict]:
         root = entry.translation_of or entry.id
+        if root is None:  # an unsaved entry (the editor's preview) has no translations yet
+            return []
         group = list(
             db.scalars(
                 select(Entry).where(

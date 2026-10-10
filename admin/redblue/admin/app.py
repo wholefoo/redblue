@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from redblue.cms import service as cms
 from redblue.cms.agent import ContentAgent
 from redblue.cms.blocks import BLOCK_TYPES, check_image_hosts, validate_blocks
-from redblue.cms.collections import COLLECTIONS, get_collection
+from redblue.cms.collections import COLLECTIONS, get_collection, validate_data
 from redblue.cms.editor import editor_spec
 from redblue.cms.models import Entry, Media, Redirect, Status
 from redblue.cms.seo import SCHEMA_TYPES, SEOFields, seo_warnings
@@ -655,20 +655,64 @@ def content_repurpose(entry_id: int, request: Request, db: DB, user: Writer):
     return back("/admin/growth/social", "Drafts created. Nothing has been posted.")
 
 
+def _render_unpublished(request: Request, db: Session, e: Entry | None, snapshot: dict):
+    """The public page for content that isn't live, from a detached copy of the entry. The
+    stored entry is never changed: a changed attribute on it would be flushed by the queries
+    the page makes, and committed, putting unreviewed content on the live site."""
+    copy = Entry(
+        id=e.id if e else None,
+        collection=e.collection if e else snapshot["collection"],
+        locale=snapshot["locale"],
+        slug=snapshot["slug"],
+        translation_of=e.translation_of if e else None,
+        published_at=e.published_at if e else None,
+        content_updated_at=e.content_updated_at if e else None,
+    )
+    copy.live, copy.live_slug = snapshot, snapshot["slug"]
+    renderer = request.app.state.rb.extras["site"]
+    return renderer.entry_page(request, db, copy, get_collection(copy.collection))
+
+
 @router.get("/content/{entry_id:int}/preview")
 def content_preview(entry_id: int, request: Request, db: DB, user: Writer):
     e = _entry(db, entry_id)
-    renderer = request.app.state.rb.extras["site"]
-    snapshot = e.snapshot()
-    saved = e.live, e.live_slug
-    e.live, e.live_slug = snapshot, e.slug  # render the working copy without saving it
-    try:
-        resp = renderer.entry_page(request, db, e, get_collection(e.collection))
-    finally:
-        e.live, e.live_slug = saved
-        db.expire(e)
+    resp = _render_unpublished(request, db, e, e.snapshot())
     resp.headers["X-Robots-Tag"] = "noindex"
     return resp
+
+
+@router.post("/content/preview-page")
+async def content_preview_page(
+    request: Request, db: DB, user: Writer, collection: str = "post", entry_id: int | None = None
+) -> JSONResponse:
+    """The editor's full-page preview: the form as it is now, validated like a save and
+    rendered as the public page (header, title, layout). Nothing is stored."""
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    e = _entry(db, entry_id) if entry_id is not None else None
+    collection = e.collection if e else collection
+    if collection not in COLLECTIONS:
+        raise HTTPException(404)
+    if not form.get("title", "").strip():
+        form["title"] = "Untitled"  # a new entry's preview, before it has a title
+    try:
+        fields = _parse_form(form)
+        blocks = validate_blocks(fields.blocks)
+        check_image_hosts(blocks, _image_hosts(request))
+        data = validate_data(collection, fields.data)
+    except (ValidationError, ValueError) as exc:
+        return JSONResponse({"errors": _errors(exc)})
+    snapshot = {
+        **fields.model_dump(include={"title", "summary", "tags", "category", "ai_label"}),
+        "collection": collection,
+        "locale": fields.locale,
+        "slug": fields.slug or cms.slugify(fields.title),
+        "blocks": blocks,
+        "data": data,
+        "seo": fields.seo.model_dump(exclude_none=True),
+        "author_id": e.author_id if e else user.id,
+    }
+    resp = _render_unpublished(request, db, e, snapshot)
+    return JSONResponse({"html": resp.body.decode()})
 
 
 @router.post("/content/preview-blocks")

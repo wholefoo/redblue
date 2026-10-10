@@ -22,7 +22,7 @@
   </div>
   <label>Summary (used as meta description fallback) <textarea name="summary" rows="2">{{ form.summary }}</textarea></label>
   <label>Blocks (JSON) <textarea name="blocks" rows="18" class="rb-code-input" spellcheck="false">{{ form.blocks }}</textarea></label>
-  <div id="rb-blocks-editor" class="rb-blocks" hidden></div>
+  <div id="rb-blocks-editor" class="rb-blocks" data-preview-page="/admin/content/preview-page?{{ 'entry_id=%d' % entry.id if entry else 'collection=' ~ (collection | urlencode) }}" hidden></div>
   <p class="rb-muted">Block types: {% for t in block_types %}<code>{{ t }}</code>{% if not loop.last %}, {% endif %}{% endfor %}. Content is validated when you save: no raw HTML, safe links only, images need alt text.</p>
   <label>{{ collections[collection].label }} fields (JSON) <textarea name="data" rows="5" class="rb-code-input" spellcheck="false">{{ form.data }}</textarea></label>
   <div class="rb-two">
