@@ -196,9 +196,11 @@ def test_admin_pages_in_a_browser(live_admin, tmp_path):
                 '.rb-admin__nav a[href^="/admin"]', "els => els.map(e => e.getAttribute('href'))"
             )
             assert "/admin/video" in nav, nav
-            paths = list(dict.fromkeys([*nav, project, "/admin/video/performance"]))
+            editor = "/admin/content/new?collection=post"  # the visual block editor
+            paths = list(dict.fromkeys([*nav, project, "/admin/video/performance", editor]))
             for path in paths:
-                name = (path.strip("/").replace("/", "-") or "admin") + f"-{label}"
+                slug = re.sub(r"[^a-z0-9]+", "-", path.lower()).strip("-")
+                name = (slug or "admin") + f"-{label}"
                 _visit(page, base + path, shots, name, problems)
 
             # Upload cards: collapsed until clicked; "Other platforms" lists the rest.

@@ -76,7 +76,10 @@ per-agent spend limits and logs cost. Every agent has a deterministic no-key fal
   (and over https, except on localhost). Passwords and OAuth keep working alongside them.
   Adding a passkey needs a sign-in from the last 10 minutes (or the password again), so a
   stolen session can't add one; admins can remove anyone's passkeys on the Users page.
-- The block editor is a validated JSON editor with preview; a visual block editor is planned.
+- The block editor is visual: one card per block, with fields made from the Pydantic block
+  models (`redblue.cms.editor`), so new block types appear without JavaScript changes. It
+  writes the same JSON the API takes, the server validates it as before, and "Edit as JSON"
+  shows the raw form. Without JavaScript the JSON textarea is used directly.
 - Built-in DAST runs passive checks plus inert canaries. ZAP (baseline) and Nuclei run too
   when installed; the gate Action installs pinned versions with `dast_tools: "true"`, which
   RedBlue's own gate uses.

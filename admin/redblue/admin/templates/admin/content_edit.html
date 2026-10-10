@@ -22,7 +22,8 @@
   </div>
   <label>Summary (used as meta description fallback) <textarea name="summary" rows="2">{{ form.summary }}</textarea></label>
   <label>Blocks (JSON) <textarea name="blocks" rows="18" class="rb-code-input" spellcheck="false">{{ form.blocks }}</textarea></label>
-  <p class="rb-muted">Block types: {% for t in block_types %}<code>{{ t }}</code>{% if not loop.last %}, {% endif %}{% endfor %}. Content is validated: no raw HTML, safe links only, images need alt text.</p>
+  <div id="rb-blocks-editor" class="rb-blocks" hidden></div>
+  <p class="rb-muted">Block types: {% for t in block_types %}<code>{{ t }}</code>{% if not loop.last %}, {% endif %}{% endfor %}. Content is validated when you save: no raw HTML, safe links only, images need alt text.</p>
   <label>{{ collections[collection].label }} fields (JSON) <textarea name="data" rows="5" class="rb-code-input" spellcheck="false">{{ form.data }}</textarea></label>
   <div class="rb-two">
     <label>Tags (comma separated) <input name="tags" value="{{ form.tags }}"></label>
@@ -79,4 +80,8 @@
 </aside>
 {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="rb-block-spec">{{ block_spec | tojson }}</script>
+<script src="/static/admin/blocks-editor.js" defer nonce="{{ nonce }}"></script>
 {% endblock %}
