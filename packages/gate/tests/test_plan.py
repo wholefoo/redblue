@@ -211,3 +211,21 @@ def test_zap_rule_ids_use_the_alert_reference(tmp_path, monkeypatch):
     monkeypatch.setattr(zap, "run_tool", fake_run)
     ctx = ScanContext(repo_path=tmp_path, config=CFG, preview=_Preview())
     assert [f.rule_id for f in zap.ZapScanner().run(ctx)] == ["ZAP-90004-2", "ZAP-10110"]
+
+
+def test_semgrep_that_scanned_nothing_is_skipped_not_run(tmp_path, monkeypatch):
+    from redblue.gate.scanners import ScannerUnavailable
+
+    said = "┌─────────────┐\n│ Scan Status │\n└─────────────┘\n  Nothing to scan.\n"
+    out = {"results": [], "errors": [], "paths": {"scanned": []}}
+    monkeypatch.setattr(sg.shutil, "which", lambda _: "/usr/bin/semgrep")
+    monkeypatch.setattr(
+        sg,
+        "run_tool",
+        lambda cmd, cwd, timeout: subprocess.CompletedProcess(cmd, 0, json.dumps(out), said),
+    )
+    ctx = ScanContext(repo_path=tmp_path, config=CFG)
+    with pytest.raises(ScannerUnavailable) as exc:
+        sg.SemgrepScanner().run(ctx)
+    assert "semgrep scanned no files" in exc.value.reason
+    assert exc.value.reason.endswith("Semgrep said: Scan Status Nothing to scan.")

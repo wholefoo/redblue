@@ -37,6 +37,13 @@ def _coverage(data: dict) -> str:
     return line
 
 
+def _said(stderr: str | None) -> str:
+    """The end of semgrep's status text, without its box drawing, on one line."""
+    text = re.sub(r"[\u2500-\u257f]+", " ", stderr or "")
+    text = " ".join(text.split())
+    return (text[-300:] if text else "nothing").strip()
+
+
 class SemgrepScanner:
     name = "semgrep"
     kind = "sast"
@@ -45,7 +52,8 @@ class SemgrepScanner:
         exe = shutil.which("semgrep")
         if exe is None:
             raise ScannerUnavailable("semgrep is not on PATH")
-        cmd = [exe, "--json", "--quiet", "--metrics=off"]
+        # Not --quiet: semgrep's status text explains an empty scan (see _said).
+        cmd = [exe, "--json", "--metrics=off"]
         for cfg in CONFIGS:
             cmd += ["--config", cfg]
         for pattern in ctx.config.all_excludes:
@@ -60,6 +68,13 @@ class SemgrepScanner:
             ) from exc
         if proc.returncode not in (0, 1) and not data.get("results"):
             raise ScannerUnavailable(f"semgrep failed: {(proc.stderr or '')[-300:]}")
+        if not (data.get("paths") or {}).get("scanned"):
+            # Exit 0 with nothing scanned: the rule packs loaded no rules (seen with the
+            # registry packs), so semgrep checked nothing. Never report that as a run.
+            raise ScannerUnavailable(
+                f"semgrep scanned no files; its rule packs ({', '.join(CONFIGS)}) may have"
+                f" loaded no rules. Semgrep said: {_said(proc.stderr)}"
+            )
         ctx.notes.append(_coverage(data))
         out = []
         for r in data.get("results", []):

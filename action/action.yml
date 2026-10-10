@@ -72,6 +72,23 @@ runs:
         if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
         if [ -f pyproject.toml ]; then python -m pip install -e . || true; fi
 
+    - name: Install semgrep in its own environment
+      shell: bash
+      # Semgrep pins its own OpenTelemetry; installed next to the app (e.g. with
+      # opentelemetry-sdk) it fails to import and scans nothing. Only its command goes on
+      # PATH, so this venv's python and pip never shadow the ones the app uses.
+      run: |
+        set -euo pipefail
+        venv="$RUNNER_TEMP/redblue-semgrep"
+        python -m venv "$venv"
+        "$venv/bin/python" -m pip install -q "semgrep>=1.70"
+        mkdir -p "$RUNNER_TEMP/redblue-tools"
+        # semgrep starts pysemgrep from PATH, so both must point into this venv.
+        for tool in semgrep pysemgrep; do
+          ln -sf "$venv/bin/$tool" "$RUNNER_TEMP/redblue-tools/$tool"
+        done
+        echo "$RUNNER_TEMP/redblue-tools" >> "$GITHUB_PATH"
+
     - name: Install ZAP and Nuclei
       if: inputs.dast_tools == 'true' && runner.os == 'Linux' && runner.arch == 'X64'
       shell: bash
