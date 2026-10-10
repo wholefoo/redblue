@@ -61,7 +61,11 @@ def create_core_app(
         exempt_prefixes=CSRF_EXEMPT + csrf_exempt,
         max_body=settings.max_upload_bytes + 1024 * 1024,
     )
-    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.secure_cookies)
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts=settings.secure_cookies,
+        image_sources=settings.image_hosts,
+    )
     app.add_middleware(HeadAsGetMiddleware)
 
     @app.get("/_rb/health", include_in_schema=False)

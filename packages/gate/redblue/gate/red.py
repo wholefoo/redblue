@@ -237,6 +237,7 @@ def _match(rule, f: Finding) -> bool:
         return False
     if rid and rid != f.rule_id:
         return False
-    if path and not (fnmatch.fnmatch(f.file or "", path) or (f.file or "").startswith(path)):
+    where = f.file or f.endpoint or ""  # live-scan findings have a URL path, not a file
+    if path and not (fnmatch.fnmatch(where, path) or where.startswith(path)):
         return False
     return bool(fp or rid or path)

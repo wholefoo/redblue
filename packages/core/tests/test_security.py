@@ -102,3 +102,37 @@ def test_webhook_signatures():
 def test_email_header_injection_rejected():
     with pytest.raises(ValueError):
         Email(to="a@b.co\r\nBcc: x@y.z", subject="s", text="t")
+
+
+def test_images_from_other_sites_need_an_allowed_host(client):
+    csp = client.get("/_rb/health").headers["content-security-policy"]
+    assert "img-src 'self' data:;" in csp  # no `https:` wildcard by default
+    hosts = ["https://cdn.example.com", "https://img.example.org:8443"]
+    assert "img-src 'self' data: https://cdn.example.com https://img.example.org:8443;" in (
+        security.build_csp("n", image_sources=hosts)
+    )
+    assert security.image_src_allowed("/media/a.png", hosts)
+    assert security.image_src_allowed("https://cdn.example.com/a.png", hosts)
+    assert security.image_src_allowed("http://cdn.example.com/a.png", hosts)  # upgraded
+    assert not security.image_src_allowed("https://cdn.example.com.evil.test/a.png", hosts)
+    assert not security.image_src_allowed("https://img.example.org/a.png", hosts)  # port
+    assert not security.image_src_allowed("https://other.example/a.png", hosts)
+
+
+def test_image_hosts_setting_takes_https_origins_only(monkeypatch):
+    from pydantic import ValidationError
+
+    from redblue.core.config import Settings
+
+    monkeypatch.setenv("RB_IMAGE_HOSTS", '["https://CDN.Example.com/"]')
+    assert Settings().image_hosts == ["https://cdn.example.com"]
+    for bad in (
+        "http://cdn.example.com",
+        "https://cdn.example.com/images",
+        "https://*.example.com",
+        "https://user@cdn.example.com",
+        "cdn.example.com",
+        "https://cdn.example.com; script-src *",
+    ):
+        with pytest.raises(ValidationError):
+            Settings(image_hosts=[bad])

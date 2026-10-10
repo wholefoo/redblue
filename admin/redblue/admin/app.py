@@ -349,6 +349,10 @@ def _parse_form(form: dict) -> cms.EntryInput:
     )
 
 
+def _image_hosts(request: Request) -> list[str]:
+    return request.app.state.rb.settings.image_hosts
+
+
 def _errors(exc: Exception) -> list[str]:
     if isinstance(exc, ValidationError):
         return [f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}" for e in exc.errors()][:20]
@@ -359,7 +363,9 @@ def _errors(exc: Exception) -> list[str]:
 async def content_create(request: Request, db: DB, user: Writer, collection: str = "post"):
     form = {k: str(v) for k, v in (await request.form()).items()}
     try:
-        entry = cms.create_entry(db, collection, _parse_form(form), user)
+        entry = cms.create_entry(
+            db, collection, _parse_form(form), user, image_hosts=_image_hosts(request)
+        )
     except (ValidationError, ValueError, cms.WorkflowError) as exc:
         return render(
             request,
@@ -415,7 +421,14 @@ async def content_save(entry_id: int, request: Request, db: DB, user: Writer):
     e = _entry(db, entry_id)
     form = {k: str(v) for k, v in (await request.form()).items()}
     try:
-        cms.update_entry(db, e, _parse_form(form), user, note=form.get("note", ""))
+        cms.update_entry(
+            db,
+            e,
+            _parse_form(form),
+            user,
+            note=form.get("note", ""),
+            image_hosts=_image_hosts(request),
+        )
     except cms.PermissionDenied as exc:
         raise HTTPException(403, str(exc)) from exc
     except (ValidationError, ValueError, cms.WorkflowError) as exc:

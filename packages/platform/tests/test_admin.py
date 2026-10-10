@@ -180,3 +180,32 @@ def test_back_only_redirects_within_the_site():
     )
     for target in ("https://evil.example/x", "//evil.example/x", "/\\evil.example", "admin"):
         assert back(target, "hi").headers["location"] == "/admin"
+
+
+def test_admin_explains_images_from_hosts_not_allowed(admin_client, app):
+    c = admin_client
+    image = {"type": "image", "src": "https://elsewhere.example/a.png", "alt": "A picture"}
+    r = c.post(
+        "/admin/content/new?collection=post",
+        data={
+            "csrf_token": csrf(c),
+            "title": "Outside image",
+            "blocks": json.dumps([image]),
+            "data": "{}",
+        },
+    )
+    assert r.status_code == 200 and "Draft created" not in r.text
+    assert "blocked by the site&#39;s security policy" in r.text and "RB_IMAGE_HOSTS" in r.text
+
+    app.state.rb.settings.image_hosts = ["https://elsewhere.example"]
+    r = c.post(
+        "/admin/content/new?collection=post",
+        data={
+            "csrf_token": csrf(c),
+            "title": "Outside image",
+            "blocks": json.dumps([image]),
+            "data": "{}",
+        },
+        follow_redirects=True,
+    )
+    assert "Draft created" in r.text
