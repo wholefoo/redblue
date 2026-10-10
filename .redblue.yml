@@ -11,3 +11,13 @@ ignore:
     reason: >-
       builder/scaffold.py renders Python, YAML and Markdown project files, not HTML;
       autoescaping would corrupt generated code. Inputs are the validated BuildPlan.
+  - rule_id: ZAP-90004-2  # Cross-Origin-Embedder-Policy (-1 is CORP, -3 is COOP)
+    reason: >-
+      Cross-Origin-Embedder-Policy would block the YouTube and Vimeo embeds that content
+      blocks allow (frame-src), including in the admin draft preview. The site uses no
+      features that need cross-origin isolation; Cross-Origin-Opener-Policy is set.
+  - rule_id: ZAP-10110
+    path: /static/rb/htmx.min.js
+    reason: >-
+      Vendored htmx library. ZAP spots its eval-style code paths (hx-on, js: values); the
+      site doesn't use them and the CSP has no 'unsafe-eval', so the browser refuses them.

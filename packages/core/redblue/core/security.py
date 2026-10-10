@@ -7,6 +7,7 @@ without opting in.
 from __future__ import annotations
 
 import hmac
+import re
 import secrets
 import threading
 import time
@@ -78,14 +79,50 @@ DEFAULT_FRAME_SOURCES = (
 )
 
 
-def build_csp(nonce: str, frame_sources: Iterable[str] = DEFAULT_FRAME_SOURCES) -> str:
+def https_origin(value: str) -> str:
+    """Normalise ``https://host[:port]`` (no path, query or credentials) for a CSP source."""
+    parts = urlsplit(value.strip())
+    if (
+        parts.scheme.lower() != "https"
+        or not parts.hostname
+        or parts.username
+        or parts.password
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+        or not re.fullmatch(r"[a-z0-9.-]+", parts.hostname)
+    ):
+        raise ValueError(f"Expected an https origin like https://cdn.example.com, got {value!r}")
+    return f"https://{parts.hostname}" + (f":{parts.port}" if parts.port else "")
+
+
+def image_src_allowed(src: str, image_hosts: Iterable[str]) -> bool:
+    """True for same-site images (relative paths) and images on an allowed host.
+
+    ``http://`` sources count as their ``https://`` form: the CSP's
+    ``upgrade-insecure-requests`` fetches them over https."""
+    parts = urlsplit(src.strip())
+    if not parts.scheme and not parts.netloc:
+        return True
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+        return False
+    origin = f"https://{parts.hostname}" + (f":{parts.port}" if parts.port else "")
+    return origin in set(image_hosts)
+
+
+def build_csp(
+    nonce: str,
+    frame_sources: Iterable[str] = DEFAULT_FRAME_SOURCES,
+    image_sources: Iterable[str] = (),
+) -> str:
     frames = " ".join(frame_sources) or "'none'"
+    images = " ".join(["'self'", "data:", *image_sources])
     return "; ".join(
         [
             "default-src 'self'",
             f"script-src 'self' 'nonce-{nonce}'",
             "style-src 'self'",
-            "img-src 'self' data: https:",
+            f"img-src {images}",
             "font-src 'self'",
             "connect-src 'self'",
             f"frame-src {frames}",
@@ -101,10 +138,17 @@ def build_csp(nonce: str, frame_sources: Iterable[str] = DEFAULT_FRAME_SOURCES) 
 class SecurityHeadersMiddleware:
     """Adds strict security headers and a per-request CSP nonce (``request.state.csp_nonce``)."""
 
-    def __init__(self, app: ASGIApp, hsts: bool = False, frame_sources=DEFAULT_FRAME_SOURCES):
+    def __init__(
+        self,
+        app: ASGIApp,
+        hsts: bool = False,
+        frame_sources=DEFAULT_FRAME_SOURCES,
+        image_sources: Iterable[str] = (),
+    ):
         self.app = app
         self.hsts = hsts
         self.frame_sources = tuple(frame_sources)
+        self.image_sources = tuple(image_sources)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -116,7 +160,10 @@ class SecurityHeadersMiddleware:
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                headers.setdefault("Content-Security-Policy", build_csp(nonce, self.frame_sources))
+                headers.setdefault(
+                    "Content-Security-Policy",
+                    build_csp(nonce, self.frame_sources, self.image_sources),
+                )
                 headers.setdefault("X-Content-Type-Options", "nosniff")
                 headers.setdefault("X-Frame-Options", "DENY")
                 headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

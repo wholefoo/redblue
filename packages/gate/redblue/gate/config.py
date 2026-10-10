@@ -73,7 +73,10 @@ class IgnoreRule(BaseModel):
 
     fingerprint: str | None = None
     rule_id: str | None = None
-    path: str | None = Field(default=None, description="Optional glob limiting a rule_id ignore.")
+    path: str | None = Field(
+        default=None,
+        description="Optional glob limiting a rule_id ignore: a file, or a URL path for DAST.",
+    )
     reason: str = Field(min_length=3)
 
     @model_validator(mode="after")

@@ -67,6 +67,16 @@ class Settings(BaseSettings):
     theme_tokens: dict = Field(default_factory=dict)  # overrides for redblue.templates.Tokens
     min_publish_words: int = 150  # growth guardrail: thin-content threshold
     max_duplicate_similarity: float = 0.8
+    # Other sites that content images may load from, as origins: '["https://cdn.example.com"]'.
+    # Anything not listed is blocked by the CSP and rejected when content is saved.
+    image_hosts: list[str] = Field(default_factory=list)
+
+    @field_validator("image_hosts")
+    @classmethod
+    def _image_origins(cls, v: list[str]) -> list[str]:
+        from redblue.core.security import https_origin
+
+        return [https_origin(h) for h in v]
 
     @field_validator("base_url")
     @classmethod

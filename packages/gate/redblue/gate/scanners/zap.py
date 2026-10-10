@@ -61,7 +61,8 @@ class ZapScanner:
                 findings.append(
                     Finding(
                         tool="zap",
-                        rule_id=f"ZAP-{alert.get('pluginid')}",
+                        # alertRef tells apart the alerts one plugin raises (90004-1, -2...).
+                        rule_id=f"ZAP-{alert.get('alertRef') or alert.get('pluginid')}",
                         title=alert.get("name", "ZAP alert"),
                         description=_strip(alert.get("desc", ""))[:1000],
                         severity=_RISK.get(str(alert.get("riskcode")), Severity.low),

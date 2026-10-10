@@ -7,11 +7,12 @@ explicit ``decorative`` flag), and embeds are limited to an allowlist of provide
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from redblue.core.security import is_safe_link
+from redblue.core.security import image_src_allowed, is_safe_link
 
 
 def _check_link(v: str) -> str:
@@ -282,6 +283,19 @@ class BlockList(BaseModel):
 def validate_blocks(data: list[dict]) -> list[dict]:
     """Validate raw block JSON and return the normalised form stored in the database."""
     return [b.model_dump(exclude_none=True) for b in BlockList(blocks=data).blocks]
+
+
+def check_image_hosts(blocks: list[dict], image_hosts: Iterable[str]) -> None:
+    """Reject images on hosts the CSP would block (``RB_IMAGE_HOSTS``), naming the fix."""
+    hosts = tuple(image_hosts)
+    for i, b in enumerate(blocks):
+        src = b.get("src") if b.get("type") == "image" and not b.get("media_key") else None
+        if src and not image_src_allowed(src, hosts):
+            raise ValueError(
+                f"Block {i + 1}: images from {src!r} are blocked by the site's security policy."
+                " Upload the image to the media library, or ask an admin to add its host to"
+                " RB_IMAGE_HOSTS."
+            )
 
 
 BLOCK_TYPES = sorted(

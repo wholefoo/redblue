@@ -45,3 +45,27 @@ def test_headless_api_and_content_agent(tmp_path):
     with rb.db.session() as s:
         e = ContentAgent(rb).draft(s, "guide", "How to brew coffee", ["How do I brew coffee?"])
         assert e.status == Status.draft and e.ai_generated and e.blocks[0]["type"] == "answer"
+
+
+def test_api_rejects_images_from_hosts_not_allowed(tmp_path):
+    app = create_core_app(
+        Settings(
+            database_url="sqlite://",
+            env="test",
+            storage_dir=tmp_path,
+            image_hosts=["https://cdn.example.com"],
+        )
+    )
+    app.include_router(cms_api_router())
+    with app.state.rb.db.session() as s:
+        key = create_api_key(s, create_user(s, "w@example.com", None, Role.writer), "t")
+    c = TestClient(app)
+    h = {"Authorization": f"Bearer {key}"}
+
+    def post(src):
+        image = {"type": "image", "src": src, "alt": "A picture"}
+        return c.post("/api/cms/post", json={"title": src, "blocks": [image]}, headers=h)
+
+    assert post("https://cdn.example.com/a.png").status_code == 201
+    r = post("https://elsewhere.example/a.png")
+    assert r.status_code == 422 and "RB_IMAGE_HOSTS" in r.json()["detail"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any
 
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from redblue.cms.blocks import blocks_text, validate_blocks
+from redblue.cms.blocks import blocks_text, check_image_hosts, validate_blocks
 from redblue.cms.collections import get_collection, validate_data
 from redblue.cms.models import Entry, Redirect, Revision, Status
 from redblue.cms.seo import SEOFields
@@ -117,9 +117,16 @@ def revisions(db: Session, entry_id: int) -> list[Revision]:
 
 
 def create_entry(
-    db: Session, collection: str, data: EntryInput, user: User | None, *, agent: str | None = None
+    db: Session,
+    collection: str,
+    data: EntryInput,
+    user: User | None,
+    *,
+    agent: str | None = None,
+    image_hosts: Iterable[str] | None = None,
 ) -> Entry:
-    """Create a draft. ``agent`` marks agent-written content (always a draft, flagged)."""
+    """Create a draft. ``agent`` marks agent-written content (always a draft, flagged).
+    With ``image_hosts``, images on other hosts are rejected (see ``RB_IMAGE_HOSTS``)."""
     get_collection(collection)
     if agent is None:
         _require(user, Role.writer)
@@ -138,7 +145,7 @@ def create_entry(
         translation_of=data.translation_of,
         title=data.title,
         summary=data.summary,
-        blocks=validate_blocks(data.blocks),
+        blocks=_blocks(data.blocks, image_hosts),
         data=validate_data(collection, data.data),
         seo=data.seo.model_dump(exclude_none=True),
         tags=data.tags,
@@ -154,6 +161,13 @@ def create_entry(
     return entry
 
 
+def _blocks(data: list[dict], image_hosts: Iterable[str] | None) -> list[dict]:
+    blocks = validate_blocks(data)
+    if image_hosts is not None:
+        check_image_hosts(blocks, image_hosts)
+    return blocks
+
+
 def update_entry(
     db: Session,
     entry: Entry,
@@ -162,6 +176,7 @@ def update_entry(
     *,
     note: str = "",
     agent: str | None = None,
+    image_hosts: Iterable[str] | None = None,
 ) -> Entry:
     if agent is None and (user is None or not _can_edit(user, entry)):
         raise PermissionDenied("You cannot edit this entry in its current state.")
@@ -176,7 +191,7 @@ def update_entry(
     ):
         raise WorkflowError(f"Slug {new_slug!r} is already used in this collection.")
     entry.title, entry.slug, entry.summary = data.title, new_slug, data.summary
-    entry.blocks = validate_blocks(data.blocks)
+    entry.blocks = _blocks(data.blocks, image_hosts)
     entry.data = validate_data(entry.collection, data.data)
     entry.seo = data.seo.model_dump(exclude_none=True)
     entry.tags, entry.category, entry.ai_label = data.tags, data.category, data.ai_label

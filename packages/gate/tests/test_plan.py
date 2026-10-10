@@ -159,3 +159,55 @@ def test_a_server_that_will_not_start_falls_back_to_in_process(monkeypatch):
     with ExitStack() as stack:
         assert gate._open_preview(stack, CFG, Path("."), notes) == "in-process preview"
     assert notes == ["Preview server failed, using in-process preview (no ZAP/Nuclei): port in use"]
+
+
+def test_ignores_match_zap_sub_alerts_and_url_paths():
+    from redblue.gate.red import _match
+    from redblue.gate.schemas import Finding
+
+    cfg = parse_config(
+        {
+            "app": "app:app",
+            "ignore": [
+                {"rule_id": "ZAP-90004-2", "reason": "COEP would block video embeds"},
+                {"rule_id": "ZAP-10110", "path": "/static/rb/*.js", "reason": "vendored"},
+            ],
+        }
+    )
+    coep, js_rule = cfg.ignore
+
+    def zap_finding(rule, endpoint):
+        return Finding(tool="zap", rule_id=rule, title="t", severity="low", endpoint=endpoint)
+
+    assert _match(coep, zap_finding("ZAP-90004-2", "/"))
+    assert not _match(coep, zap_finding("ZAP-90004-1", "/"))  # CORP is a different alert
+    assert _match(js_rule, zap_finding("ZAP-10110", "/static/rb/htmx.min.js"))
+    assert not _match(js_rule, zap_finding("ZAP-10110", "/static/app.js"))
+
+
+def test_zap_rule_ids_use_the_alert_reference(tmp_path, monkeypatch):
+    from redblue.gate.scanners import zap
+
+    def fake_run(cmd, cwd, timeout):
+        report = {
+            "site": [
+                {
+                    "alerts": [
+                        {
+                            "pluginid": "90004",
+                            "alertRef": "90004-2",
+                            "name": "COEP",
+                            "riskcode": "1",
+                        },
+                        {"pluginid": "10110", "name": "Dangerous JS", "riskcode": "1"},
+                    ]
+                }
+            ]
+        }
+        Path(cmd[cmd.index("-J") + 1]).write_text(json.dumps(report))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(zap, "find_tool", lambda *a: ["zap-baseline.py"])
+    monkeypatch.setattr(zap, "run_tool", fake_run)
+    ctx = ScanContext(repo_path=tmp_path, config=CFG, preview=_Preview())
+    assert [f.rule_id for f in zap.ZapScanner().run(ctx)] == ["ZAP-90004-2", "ZAP-10110"]

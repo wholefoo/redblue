@@ -4,7 +4,7 @@ session with the right role and always go through the same workflow as the admin
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -114,19 +114,27 @@ def cms_api_router() -> APIRouter:
     Writer = Annotated[User, Depends(require_role(Role.writer))]
 
     @r.post("/{collection}", status_code=201)
-    def create(collection: str, body: service.EntryInput, db: DB, user: Writer) -> DraftOut:
+    def create(
+        collection: str, body: service.EntryInput, request: Request, db: DB, user: Writer
+    ) -> DraftOut:
         _known(collection)
         try:
-            e = service.create_entry(db, collection, body, user)
+            e = service.create_entry(
+                db, collection, body, user, image_hosts=request.app.state.rb.settings.image_hosts
+            )
         except (service.WorkflowError, ValueError) as exc:
             raise HTTPException(422, str(exc)) from exc
         return _draft(e)
 
     @r.put("/entries/{entry_id}")
-    def update(entry_id: int, body: service.EntryInput, db: DB, user: Writer) -> DraftOut:
+    def update(
+        entry_id: int, body: service.EntryInput, request: Request, db: DB, user: Writer
+    ) -> DraftOut:
         e = _get(db, entry_id)
         try:
-            service.update_entry(db, e, body, user)
+            service.update_entry(
+                db, e, body, user, image_hosts=request.app.state.rb.settings.image_hosts
+            )
         except service.PermissionDenied as exc:
             raise HTTPException(403, str(exc)) from exc
         except (service.WorkflowError, ValueError) as exc:

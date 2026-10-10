@@ -46,3 +46,16 @@ def test_inline_escapes_everything_else():
     assert 'href="/x?a=1&amp;b=&#34;2&#34;"' in out
     assert "javascript" not in str(inline("[x](javascript:alert(1))"))
     assert 'rel="noopener"' in str(inline("[x](https://other.example)"))
+
+
+def test_images_on_other_hosts_are_rejected_unless_allowed():
+    from redblue.cms.blocks import check_image_hosts
+
+    blocks = [
+        {"type": "image", "media_key": "abc", "alt": "Uploaded"},
+        {"type": "image", "src": "/static/logo.png", "alt": "Local"},
+        {"type": "image", "src": "https://cdn.example.com/a.png", "alt": "CDN"},
+    ]
+    check_image_hosts(blocks, ["https://cdn.example.com"])
+    with pytest.raises(ValueError, match=r"Block 3: .*RB_IMAGE_HOSTS"):
+        check_image_hosts(blocks, [])
