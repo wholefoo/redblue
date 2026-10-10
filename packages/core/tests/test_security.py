@@ -136,3 +136,19 @@ def test_image_hosts_setting_takes_https_origins_only(monkeypatch):
     ):
         with pytest.raises(ValidationError):
             Settings(image_hosts=[bad])
+
+
+def test_pages_are_not_loadable_by_other_sites_but_files_are(app, client):
+    from fastapi.responses import HTMLResponse, PlainTextResponse
+
+    @app.get("/_test/page", response_class=HTMLResponse)
+    def page():
+        return "<p>hi</p>"
+
+    @app.get("/_test/file.txt", response_class=PlainTextResponse)
+    def file():
+        return "hi"
+
+    assert client.get("/_test/page").headers["cross-origin-resource-policy"] == "same-origin"
+    assert "cross-origin-resource-policy" not in client.get("/_test/file.txt").headers
+    assert "cross-origin-resource-policy" not in client.get("/_rb/health").headers

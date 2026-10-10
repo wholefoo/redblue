@@ -171,6 +171,10 @@ class SecurityHeadersMiddleware:
                     "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()"
                 )
                 headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+                if headers.get("content-type", "").startswith("text/html"):
+                    # Other sites can't load the site's pages as a resource. Images and
+                    # other files stay embeddable (feed readers, other sites).
+                    headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
                 if self.hsts:
                     headers.setdefault(
                         "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
