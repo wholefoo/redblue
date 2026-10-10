@@ -20,6 +20,7 @@ from redblue.cms import service as cms
 from redblue.cms.agent import ContentAgent
 from redblue.cms.blocks import BLOCK_TYPES
 from redblue.cms.collections import COLLECTIONS, get_collection
+from redblue.cms.editor import editor_spec
 from redblue.cms.models import Entry, Media, Redirect, Status
 from redblue.cms.seo import SCHEMA_TYPES, SEOFields, seo_warnings
 from redblue.core import auth
@@ -390,8 +391,14 @@ def content_list(
     )
 
 
+def _block_spec(db: Session) -> dict:
+    """Form description for the visual block editor, with the media library to pick from."""
+    media = db.scalars(select(Media).order_by(Media.id.desc()).limit(500))
+    return editor_spec([{"key": m.key, "label": m.alt or m.key} for m in media])
+
+
 @router.get("/content/new")
-def content_new(request: Request, user: Writer, collection: str = "post") -> HTMLResponse:
+def content_new(request: Request, db: DB, user: Writer, collection: str = "post") -> HTMLResponse:
     get_collection(collection)
     return render(
         request,
@@ -405,6 +412,7 @@ def content_new(request: Request, user: Writer, collection: str = "post") -> HTM
         problems=[],
         revisions=[],
         block_types=BLOCK_TYPES,
+        block_spec=_block_spec(db),
         schema_types=SCHEMA_TYPES,
     )
 
@@ -519,6 +527,7 @@ async def content_create(request: Request, db: DB, user: Writer, collection: str
             problems=[],
             revisions=[],
             block_types=BLOCK_TYPES,
+            block_spec=_block_spec(db),
             schema_types=SCHEMA_TYPES,
         )
     return back(f"/admin/content/{entry.id}", "Draft created.")
@@ -551,6 +560,7 @@ def _edit_page(request, db, user, e: Entry, form: dict, errors: list[str]) -> HT
         problems=cms.publish_problems(db, e),
         revisions=cms.revisions(db, e.id),
         block_types=BLOCK_TYPES,
+        block_spec=_block_spec(db),
         schema_types=SCHEMA_TYPES,
         public_path=get_collection(e.collection).path_for(e.live_slug or e.slug, e.locale),
     )
