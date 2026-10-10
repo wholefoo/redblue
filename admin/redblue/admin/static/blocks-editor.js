@@ -411,8 +411,30 @@
     class: "rb-preview__frame",
     title: "Full-page preview",
     sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
-    hidden: true,
   });
+  // The page is laid out at a real device width, then scaled down to fit the panel, so the
+  // site's desktop layout shows even in a narrow editor.
+  const WIDTHS = { desktop: 1280, mobile: 390 };
+  let previewWidth = "desktop";
+  const previewStage = el("div", { class: "rb-preview__stage", hidden: true }, [previewFrame]);
+  function fitFrame() {
+    const width = WIDTHS[previewWidth];
+    const room = previewStage.clientWidth;
+    if (!room) return; // hidden
+    const scale = Math.min(1, room / width);
+    previewFrame.style.width = width + "px";
+    previewFrame.style.height = 100 / scale + "%"; // scaled back down to the stage's height
+    previewFrame.style.transform = "scale(" + scale + ")";
+    previewFrame.style.marginLeft = Math.max(0, (room - width * scale) / 2) + "px";
+  }
+  if (window.ResizeObserver) new ResizeObserver(fitFrame).observe(previewStage);
+  const widthButtons = [["desktop", "Desktop"], ["mobile", "Mobile"]].map(([key, label]) =>
+    button(label, null, () => {
+      previewWidth = key;
+      widthButtons.forEach((b, i) => b.setAttribute("aria-pressed", String((i === 0) === (key === "desktop"))));
+      fitFrame();
+    }, { "aria-pressed": key === previewWidth ? "true" : "false" }));
+  const widthGroup = el("span", { class: "rb-preview__modes rb-preview__widths", role: "group", "aria-label": "Preview width", hidden: true }, widthButtons);
   const previewNote = el("p", { class: "rb-muted", "aria-live": "polite", hidden: true });
   function note(text) {
     previewNote.textContent = text;
@@ -421,8 +443,10 @@
   const view = () => (previewMode === "page" ? previewFrame : previewBody);
   function showView() {
     previewBody.hidden = !previewOpen || previewMode !== "blocks";
-    previewFrame.hidden = !previewOpen || previewMode !== "page";
+    previewStage.hidden = !previewOpen || previewMode !== "page";
+    widthGroup.hidden = previewStage.hidden;
     note(previewNote.textContent);
+    fitFrame();
   }
   const previewToggle = button("Hide", "Hide the live preview", () => {
     previewOpen = !previewOpen;
@@ -444,11 +468,12 @@
       el("strong", { text: "Live preview" }),
       el("small", { class: "rb-muted", text: "How it will look. Saved only when you save." }),
       el("span", { class: "rb-preview__modes", role: "group", "aria-label": "Preview" }, modeButtons),
+      widthGroup,
       previewToggle,
     ]),
     previewNote,
     previewBody,
-    previewFrame,
+    previewStage,
   ]);
 
   function csrfToken() {

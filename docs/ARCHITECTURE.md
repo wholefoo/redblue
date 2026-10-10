@@ -84,8 +84,9 @@ per-agent spend limits and logs cost. Every agent has a deterministic no-key fal
   under the blocks shows them rendered with the public site's templates
   (`POST /admin/content/preview-blocks` validates like a save and stores nothing), or the
   whole page from the unsaved form (`POST /admin/content/preview-page`), shown in a
-  sandboxed frame with its scripts removed. Previews render a detached copy of the entry, so
-  previewing never changes what is live.
+  sandboxed frame with its scripts removed, at a desktop (1280px, scaled to fit) or mobile
+  (390px) width. Previews render a detached copy of the entry, so previewing never changes
+  what is live.
 - Built-in DAST runs passive checks plus inert canaries. ZAP (baseline) and Nuclei run too
   when installed; the gate Action installs pinned versions with `dast_tools: "true"`, which
   RedBlue's own gate uses.

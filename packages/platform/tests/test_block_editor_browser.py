@@ -265,6 +265,25 @@ def test_block_editor(live):
         assert frame.locator("script").count() == 0
         assert frame.locator("body").evaluate("b => getComputedStyle(b).margin") == "0px"
         assert not preview.is_visible()
+        # Laid out at a desktop width and scaled to fit the panel; or at a phone's width.
+        stage = page.locator(".rb-preview__stage")
+        iframe = page.locator("iframe.rb-preview__frame")
+
+        def laid_out_at(width):  # the frame's own viewport follows its new size a moment later
+            page.wait_for_function(
+                "w => document.querySelector('iframe.rb-preview__frame').contentWindow"
+                ".innerWidth === w",
+                arg=width,
+            )
+
+        laid_out_at(1280)
+        assert iframe.bounding_box()["width"] <= stage.bounding_box()["width"] + 1
+        page.get_by_role("button", name="Mobile").click()
+        laid_out_at(390)
+        assert abs(iframe.bounding_box()["width"] - 390) < 1
+        assert abs(iframe.bounding_box()["height"] - stage.bounding_box()["height"]) <= 2
+        page.get_by_role("button", name="Desktop").click()
+        laid_out_at(1280)
         page.fill('input[name="title"]', "Made visually, live")
         frame.locator("h1", has_text="Made visually, live").wait_for()
         page.fill('input[name="title"]', "Made visually")
