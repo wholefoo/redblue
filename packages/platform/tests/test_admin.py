@@ -209,3 +209,30 @@ def test_admin_explains_images_from_hosts_not_allowed(admin_client, app):
         follow_redirects=True,
     )
     assert "Draft created" in r.text
+
+
+def test_block_preview_renders_like_the_site_and_validates_like_a_save(admin_client, app):
+    c = admin_client
+    url = "/admin/content/preview-blocks"
+    blocks = [
+        {"type": "heading", "text": "Hello <b>there</b>", "level": 3},
+        {"type": "paragraph", "text": "**Bold** and [a link](/about)."},
+    ]
+    html = c.post(url, json={"blocks": blocks}).json()["html"]
+    assert "Hello &lt;b&gt;there&lt;/b&gt;</h3>" in html  # escaped, as on the site
+    assert '<strong>Bold</strong> and <a href="/about">a link</a>' in html
+
+    bad = c.post(url, json={"blocks": [{"type": "paragraph", "text": "[x](javascript:alert(1))"}]})
+    assert bad.status_code == 200 and "Unsafe or invalid link" in bad.json()["errors"][0]
+    image = {"type": "image", "src": "https://elsewhere.example/a.png", "alt": "A picture"}
+    assert "RB_IMAGE_HOSTS" in c.post(url, json={"blocks": [image]}).json()["errors"][0]
+    assert c.post(url, json={"nope": 1}).status_code == 400
+
+    no_csrf = c.post(url, json={"blocks": []}, headers={"x-csrf-token": "wrong"})
+    assert no_csrf.status_code == 403
+    from fastapi.testclient import TestClient
+
+    anon = TestClient(app)
+    anon.get("/admin/login")
+    anon.headers["x-csrf-token"] = anon.cookies["rb_csrf"]
+    assert anon.post(url, json={"blocks": []}, follow_redirects=False).status_code == 303

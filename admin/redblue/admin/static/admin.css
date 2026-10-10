@@ -70,3 +70,8 @@ select,.rb-admin input,.rb-admin textarea{font:inherit;padding:.4rem .5rem;borde
 .rb-media-thumb{padding:0;border:2px solid transparent;border-radius:var(--rb-radius);background:none;cursor:pointer;line-height:0}
 .rb-media-thumb img{width:4rem;height:4rem;object-fit:cover;border-radius:calc(var(--rb-radius) - 2px)}
 .rb-media-thumb.is-chosen,.rb-media-thumb:focus-visible{border-color:var(--rb-primary)}
+.rb-preview{border:1px solid var(--rb-border);border-radius:var(--rb-radius);padding:.75rem;display:grid;gap:.5rem;min-width:0}
+.rb-preview__head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem}
+.rb-preview__head .rb-btn{margin-left:auto}
+.rb-preview__body{max-height:40rem;overflow:auto;transition:opacity .2s}
+.rb-preview__body.is-stale{opacity:.45}

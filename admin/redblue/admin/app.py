@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from redblue.cms import service as cms
 from redblue.cms.agent import ContentAgent
-from redblue.cms.blocks import BLOCK_TYPES
+from redblue.cms.blocks import BLOCK_TYPES, check_image_hosts, validate_blocks
 from redblue.cms.collections import COLLECTIONS, get_collection
 from redblue.cms.editor import editor_spec
 from redblue.cms.models import Entry, Media, Redirect, Status
@@ -669,6 +669,25 @@ def content_preview(entry_id: int, request: Request, db: DB, user: Writer):
         db.expire(e)
     resp.headers["X-Robots-Tag"] = "noindex"
     return resp
+
+
+@router.post("/content/preview-blocks")
+async def content_preview_blocks(request: Request, db: DB, user: Writer) -> JSONResponse:
+    """The editor's live preview: validate the blocks like a save would, then render them
+    with the public site's templates. Nothing is stored."""
+    try:
+        data = await request.json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("blocks"), list):
+        return JSONResponse({"errors": ['Send {"blocks": [...]}.']}, status_code=400)
+    try:
+        blocks = validate_blocks(data["blocks"])
+        check_image_hosts(blocks, _image_hosts(request))
+    except (ValidationError, ValueError) as exc:
+        return JSONResponse({"errors": _errors(exc)})
+    html = request.app.state.rb.extras["site"].blocks_html(request, db, blocks)
+    return JSONResponse({"html": html})
 
 
 @router.post("/content/draft")
