@@ -53,6 +53,25 @@ EVERY_BLOCK = [
 ]
 
 
+def _png(width: int = 8, height: int = 8) -> bytes:
+    """A real (red) PNG, so the browser can draw the media thumbnails."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -92,12 +111,26 @@ def live(tmp_path, monkeypatch):
             email_from="owner@example.com",
         )
     )
+    from redblue.cms.models import Media
+
+    stored = app.state.rb.storage.put(_png(), "red-square.png")
     with app.state.rb.db.session() as db:
+        db.add(
+            Media(
+                key=stored.key,
+                mime=stored.mime,
+                size=stored.size,
+                sha256=stored.sha256,
+                alt="A red square",
+                width=8,
+                height=8,
+            )
+        )
         admin = ensure_admin(db, "admin@example.com", "correct-horse-battery")
         entry = cms.create_entry(
             db, "post", cms.EntryInput(title="Every block", blocks=EVERY_BLOCK), admin
         )
-        every_id, stored = entry.id, entry.blocks
+        every_id, blocks = entry.id, entry.blocks
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -106,7 +139,7 @@ def live(tmp_path, monkeypatch):
             break
         time.sleep(0.05)
     try:
-        yield f"http://127.0.0.1:{port}", app, every_id, stored
+        yield f"http://127.0.0.1:{port}", app, every_id, blocks, stored.key
     finally:
         server.should_exit = True
         thread.join(timeout=5)
@@ -120,7 +153,7 @@ def _blocks(app, entry_id):
 
 
 def test_block_editor(live):
-    base, app, every_id, stored = live
+    base, app, every_id, stored, media_key = live
     problems: list[str] = []
     with sync_api.sync_playwright() as p:
         browser = _browser(p)
@@ -163,12 +196,26 @@ def test_block_editor(live):
         lst.get_by_role("button", name="Add to items").click()
         lst.get_by_role("textbox", name="Items 2", exact=True).fill("Two")
 
+        # Insert an image between the heading and the paragraph, picked by its thumbnail.
+        editor.get_by_role("button", name="Add a block below block 1").click()
+        editor.get_by_label("Type of block to add below block 1").select_option("image")
+        editor.get_by_role("button", name="Add block below block 1").click()
+        image = editor.locator("section.rb-block").nth(1)
+        assert image.get_attribute("aria-label") == "Block 2: Image"
+        image.get_by_role("button", name="Use image: A red square").click()
+        assert (
+            image.locator(".rb-media-preview img").evaluate("i => i.complete && i.naturalWidth")
+            == 8
+        )
+        image.get_by_label("Alt text (optional)").fill("A red square")
+
         page.fill('input[name="title"]', "Made visually")
         page.get_by_role("button", name="Create draft").click()
         page.wait_for_url(re.compile(r".*/admin/content/\d+\?msg="))
         new_id = int(re.search(r"/admin/content/(\d+)", page.url).group(1))
         assert _blocks(app, new_id) == [
             {"type": "heading", "level": 3, "text": "First"},
+            {"type": "image", "media_key": media_key, "alt": "A red square", "decorative": False},
             {"type": "paragraph", "text": "Second, after the move."},
             {"type": "faq", "items": [{"question": "Is it visual?", "answer": "Yes."}]},
             {"type": "list", "ordered": False, "items": ["One", "Two"]},

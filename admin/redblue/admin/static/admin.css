@@ -63,3 +63,10 @@ select,.rb-admin input,.rb-admin textarea{font:inherit;padding:.4rem .5rem;borde
 .rb-block-list input,.rb-block-row input{flex:1 1 6rem;min-width:0}
 .rb-block-add{display:flex;gap:.5rem;flex-wrap:wrap}
 .rb-btn--small{padding:.15rem .5rem;font-size:.85rem}
+.rb-block-add--inline{padding:.5rem;border:1px dashed var(--rb-primary);border-radius:var(--rb-radius)}
+.rb-media-field{display:grid;gap:.4rem}
+.rb-media-preview img{max-height:6rem;max-width:100%;border-radius:var(--rb-radius);border:1px solid var(--rb-border)}
+.rb-media-thumbs{display:flex;flex-wrap:wrap;gap:.35rem}
+.rb-media-thumb{padding:0;border:2px solid transparent;border-radius:var(--rb-radius);background:none;cursor:pointer;line-height:0}
+.rb-media-thumb img{width:4rem;height:4rem;object-fit:cover;border-radius:calc(var(--rb-radius) - 2px)}
+.rb-media-thumb.is-chosen,.rb-media-thumb:focus-visible{border-color:var(--rb-primary)}
