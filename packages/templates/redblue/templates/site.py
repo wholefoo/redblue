@@ -185,6 +185,12 @@ class SiteRenderer:
             request, page_type.template, ctx, status_code=status_code
         )
 
+    def blocks_html(self, request: Request, db: Session, blocks: list[dict]) -> str:
+        """Validated blocks rendered as on the public pages, for the editor's live preview."""
+        csrf = getattr(request.state, "csrf_token", "")
+        tpl = self.templates.env.get_template("cms/preview.html")
+        return tpl.render(blocks=blocks, ctx=BlockContext(request, db, self.templates, csrf))
+
     # -------------------------------------------------------------- entries
 
     def entry_page(

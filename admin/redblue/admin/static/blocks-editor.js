@@ -36,6 +36,7 @@
 
   function save() {
     textarea.value = JSON.stringify(blocks, null, 2);
+    schedulePreview();
   }
 
   // A new, empty value for a field (what "Add" puts in).
@@ -324,6 +325,88 @@
     toggle.setAttribute("aria-pressed", "true");
   }
 
+  // ------------------------------------------------------------------ live preview
+  // The server validates the blocks as a save would and renders them with the public
+  // site's templates. The preview is view-only (inert), and nothing is stored.
+
+  const PREVIEW_DELAY = 400;
+  let previewTimer = null;
+  let previewSeq = 0;
+  let previewOpen = true;
+  const previewBody = el("div", { class: "rb-preview__body", inert: true });
+  const previewNote = el("p", { class: "rb-muted", "aria-live": "polite", hidden: true });
+  function note(text) {
+    previewNote.textContent = text;
+    previewNote.hidden = !previewOpen || !text;
+  }
+  const previewToggle = button("Hide", "Hide the live preview", () => {
+    previewOpen = !previewOpen;
+    previewToggle.textContent = previewOpen ? "Hide" : "Show";
+    previewToggle.setAttribute("aria-label", (previewOpen ? "Hide" : "Show") + " the live preview");
+    previewBody.hidden = !previewOpen;
+    note(previewNote.textContent);
+    if (previewOpen) refreshPreview();
+  });
+  const preview = el("section", { class: "rb-preview", "aria-label": "Live preview" }, [
+    el("div", { class: "rb-preview__head" }, [
+      el("strong", { text: "Live preview" }),
+      el("small", { class: "rb-muted", text: "How the blocks will look. Saved only when you save." }),
+      previewToggle,
+    ]),
+    previewNote,
+    previewBody,
+  ]);
+
+  function csrfToken() {
+    try {
+      return JSON.parse(document.body.getAttribute("hx-headers") || "{}")["X-CSRF-Token"] || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function schedulePreview() {
+    if (!previewOpen) return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(refreshPreview, PREVIEW_DELAY);
+  }
+
+  async function refreshPreview() {
+    const seq = ++previewSeq;
+    let list;
+    try {
+      list = JSON.parse(textarea.value.trim() || "[]");
+    } catch (e) {
+      note("Fix the JSON to update the preview.");
+      previewBody.classList.add("is-stale");
+      return;
+    }
+    let data;
+    try {
+      const resp = await fetch("/admin/content/preview-blocks", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify({ blocks: list }),
+      });
+      data = await resp.json();
+    } catch (e) {
+      data = { errors: ["The preview couldn't be loaded."] };
+    }
+    if (seq !== previewSeq) return; // a newer edit has been sent since
+    if (data.errors) {
+      note("Not updated until this is fixed: " + data.errors.join(" · "));
+      previewBody.classList.add("is-stale");
+      return;
+    }
+    note("");
+    previewBody.classList.remove("is-stale");
+    const doc = new DOMParser().parseFromString(data.html, "text/html");
+    previewBody.replaceChildren(...doc.body.childNodes);
+  }
+
+  textarea.addEventListener("input", schedulePreview);
+
   toggle.addEventListener("click", () => (root.hidden ? showVisual() : showJSON()));
   const datalist = el("datalist", { id: "rb-media-list" },
     spec.media.map((m) => el("option", { value: m.key, text: m.label })));
@@ -332,5 +415,7 @@
   ]), root);
   root.parentNode.insertBefore(status, root);
   root.parentNode.appendChild(datalist);
+  root.parentNode.insertBefore(preview, root.nextSibling);
   if (!showVisual()) showJSON();
+  refreshPreview();
 })();

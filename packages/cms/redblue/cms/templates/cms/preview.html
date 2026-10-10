@@ -1,0 +1,3 @@
+{#- Blocks only, for the admin editor's live preview. Same macros as the public pages. -#}
+{% from "cms/blocks.html" import render_blocks %}
+<div class="rb-stack">{{ render_blocks(blocks, ctx) }}</div>

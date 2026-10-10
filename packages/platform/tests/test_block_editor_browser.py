@@ -21,7 +21,7 @@ EVERY_BLOCK = [
     {"type": "heading", "level": 2, "text": "Heat pumps", "anchor": "heat-pumps"},
     {"type": "paragraph", "text": "They move heat, **not** make it. See [the guide](/guide)."},
     {"type": "list", "ordered": True, "items": ["Air source", "Ground source"]},
-    {"type": "image", "src": "/static/rb/og.png", "alt": "A heat pump", "caption": "Outside"},
+    {"type": "image", "src": "/_rb/favicon.svg", "alt": "A heat pump", "caption": "Outside"},
     {"type": "quote", "text": "Efficient in winter.", "cite": "An engineer"},
     {"type": "code", "language": "python", "code": "print('hi')"},
     {"type": "callout", "tone": "warning", "text": "Check your insulation first."},
@@ -208,6 +208,21 @@ def test_block_editor(live):
             == 8
         )
         image.get_by_label("Alt text (optional)").fill("A red square")
+
+        # The live preview renders the blocks like the site does, and goes stale on errors.
+        preview = page.locator(".rb-preview__body")
+        preview.locator("h3", has_text="First").wait_for()
+        assert preview.locator("img").evaluate("i => i.naturalWidth") == 8
+        para = editor.locator("section.rb-block").nth(2)
+        para.get_by_label("Text").fill("See [this](javascript:alert(1)).")
+        page.get_by_text("Not updated until this is fixed").wait_for()
+        assert "Unsafe or invalid link" in page.locator(".rb-preview").inner_text()
+        assert "is-stale" in preview.get_attribute("class")
+        para.get_by_label("Text").fill("Second, after the move.")
+        page.wait_for_function(
+            "() => !document.querySelector('.rb-preview__body').classList.contains('is-stale')"
+        )
+        assert preview.locator("p", has_text="Second, after the move.").is_visible()
 
         page.fill('input[name="title"]', "Made visually")
         page.get_by_role("button", name="Create draft").click()

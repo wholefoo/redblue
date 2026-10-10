@@ -79,7 +79,9 @@ per-agent spend limits and logs cost. Every agent has a deterministic no-key fal
 - The block editor is visual: one card per block, with fields made from the Pydantic block
   models (`redblue.cms.editor`), so new block types appear without JavaScript changes. It
   writes the same JSON the API takes, the server validates it as before, and "Edit as JSON"
-  shows the raw form. Without JavaScript the JSON textarea is used directly.
+  shows the raw form. Without JavaScript the JSON textarea is used directly. A live preview
+  under the blocks shows them rendered with the public site's templates
+  (`POST /admin/content/preview-blocks` validates like a save and stores nothing).
 - Built-in DAST runs passive checks plus inert canaries. ZAP (baseline) and Nuclei run too
   when installed; the gate Action installs pinned versions with `dast_tools: "true"`, which
   RedBlue's own gate uses.
