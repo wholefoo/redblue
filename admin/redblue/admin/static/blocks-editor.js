@@ -531,6 +531,14 @@
   function showPage(html) {
     const doc = new DOMParser().parseFromString(html, "text/html");
     doc.querySelectorAll("script").forEach((s) => s.remove());
+    // Embedded players can't run in the script-free frame (they'd show broken and log
+    // errors), so each one becomes a labelled placeholder of the same size.
+    doc.querySelectorAll("iframe").forEach((f) => {
+      const box = doc.createElement("div");
+      box.className = "rb-embed__placeholder";
+      box.textContent = "Video: " + (f.getAttribute("title") || "embedded player") + " (plays on the live page)";
+      f.replaceWith(box);
+    });
     doc.head.prepend(el("base", { target: "_blank" }));
     let y = 0;
     try { y = previewFrame.contentWindow.scrollY; } catch (e) { /* not loaded yet */ }

@@ -319,6 +319,9 @@ def test_block_editor(live):
         frame = page.frame_locator("iframe.rb-preview__frame")
         frame.locator("h1", has_text="Every block").wait_for()
         laid_out_at(390)
+        # Embeds can't play inside the script-free preview: a placeholder, not a broken player.
+        assert frame.locator("iframe").count() == 0
+        assert frame.get_by_text("Video: Explainer").is_visible()
         page.get_by_role("button", name="Hide the live preview").click()
         page.reload()
         assert page.get_by_role("button", name="Show the live preview").is_visible()
