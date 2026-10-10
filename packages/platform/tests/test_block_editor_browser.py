@@ -1,7 +1,7 @@
-"""The visual block editor in real Chromium: build a post by clicking, save it, and check the
-stored blocks; open an entry using every block type and save it unchanged through the editor
-(the JSON must come back identical); bad JSON in the raw view is refused. Fails on console
-errors, including CSP violations. Skipped without Playwright and Chromium, like
+"""The visual block editor in real Chromium: build a post by clicking and dragging, save it,
+and check the stored blocks; open an entry using every block type and save it unchanged through
+the editor (the JSON must come back identical); bad JSON in the raw view is refused. Fails on
+console errors, including CSP violations. Skipped without Playwright and Chromium, like
 test_admin_screens."""
 
 from __future__ import annotations
@@ -157,7 +157,8 @@ def test_block_editor(live):
     problems: list[str] = []
     with sync_api.sync_playwright() as p:
         browser = _browser(p)
-        page = browser.new_page()
+        # Tall enough that every card is on screen: Playwright drags don't scroll mid-drag.
+        page = browser.new_page(viewport={"width": 1280, "height": 2400})
         page.on(
             "console",
             lambda m: problems.append(f"console: {m.text[:200]}") if m.type == "error" else None,
@@ -195,6 +196,35 @@ def test_block_editor(live):
         lst.get_by_role("textbox", name="Items 1", exact=True).fill("One")
         lst.get_by_role("button", name="Add to items").click()
         lst.get_by_role("textbox", name="Items 2", exact=True).fill("Two")
+
+        # Drag the list (block 4) by its handle above the FAQ (block 3), then back below it.
+        def drag(source, target):
+            editor.locator("section.rb-block").nth(source).locator(".rb-block__handle").drag_to(
+                editor.locator("section.rb-block").nth(target),
+                target_position={"x": 40, "y": 5},  # the top half: drop above the target
+            )
+
+        drag(3, 2)
+        labels = editor.locator("section.rb-block").evaluate_all(
+            "cards => cards.map(c => c.getAttribute('aria-label'))"
+        )
+        assert labels == ["Block 1: Heading", "Block 2: Paragraph", "Block 3: List", "Block 4: FAQ"]
+        assert json.loads(page.locator('textarea[name="blocks"]').input_value())[2]["items"] == [
+            "One",
+            "Two",
+        ]
+        drag(2, 3)  # above the FAQ again: no move
+        assert editor.locator("section.rb-block").nth(2).get_attribute("aria-label") == (
+            "Block 3: List"
+        )
+        last = editor.locator("section.rb-block").nth(3)
+        editor.locator("section.rb-block").nth(2).locator(".rb-block__handle").drag_to(
+            last, target_position={"x": 40, "y": last.bounding_box()["height"] - 5}
+        )
+        assert editor.locator("section.rb-block").nth(3).get_attribute("aria-label") == (
+            "Block 4: List"
+        )
+        assert not editor.locator(".rb-drop-before, .rb-drop-after, .is-dragging").count()
 
         # Insert an image between the heading and the paragraph, picked by its thumbnail.
         editor.get_by_role("button", name="Add a block below block 1").click()
