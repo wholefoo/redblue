@@ -74,6 +74,8 @@ per-agent spend limits and logs cost. Every agent has a deterministic no-key fal
   must be discoverable and user-verified; challenges are stored server-side and work once.
   The relying party is the host of `RB_BASE_URL`, so a site must be served from that origin
   (and over https, except on localhost). Passwords and OAuth keep working alongside them.
+  Adding a passkey needs a sign-in from the last 10 minutes (or the password again), so a
+  stolen session can't add one; admins can remove anyone's passkeys on the Users page.
 - The block editor is a validated JSON editor with preview; a visual block editor is planned.
 - Built-in DAST runs passive checks plus inert canaries. ZAP (baseline) and Nuclei run too
   when installed; the gate Action installs pinned versions with `dast_tools: "true"`, which

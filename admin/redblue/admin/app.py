@@ -181,13 +181,46 @@ async def _json(request: Request) -> dict:
     return data
 
 
+# Adding a passkey gives lasting access, so it needs a recent sign-in: someone holding a
+# stolen session cookie can't quietly add their own passkey.
+RECENT_SIGN_IN_SECONDS = 10 * 60
+
+
+def _signed_in_recently(request: Request) -> bool:
+    age = auth.seconds_since_sign_in(request)
+    return age is not None and age < RECENT_SIGN_IN_SECONDS
+
+
 @router.get("/account")
 def account(request: Request, db: DB, user: Writer) -> HTMLResponse:
-    return render(request, "account.html", user, passkeys=pk.user_passkeys(db, user))
+    return render(
+        request,
+        "account.html",
+        user,
+        passkeys=pk.user_passkeys(db, user),
+        recent=_signed_in_recently(request),
+        has_password=bool(user.password_hash),
+    )
+
+
+@router.post("/account/confirm", dependencies=[Depends(rate_limit("admin-login", 10, 300))])
+def account_confirm(
+    request: Request, db: DB, user: Writer, password: Annotated[str, Form()] = ""
+) -> RedirectResponse:
+    """Confirm it's you with your password; the session counts as a fresh sign-in."""
+    if auth.authenticate(db, user.email, password) is None:
+        return back("/admin/account", "Incorrect password.")
+    resp = back("/admin/account", "Confirmed. You can add a passkey for the next 10 minutes.")
+    auth.login(request, resp, user)
+    return resp
 
 
 @router.post("/passkeys/register/options")
 def passkey_register_options(request: Request, db: DB, user: Writer) -> Response:
+    if not _signed_in_recently(request):
+        return _passkey_error(
+            pk.PasskeyError("For your security, confirm it's you before adding a passkey."), 403
+        )
     try:
         body, token = pk.registration_options(db, request.app.state.rb.settings, user)
     except pk.PasskeyError as exc:
@@ -991,6 +1024,13 @@ def catalog(request: Request, user: Writer) -> HTMLResponse:
 # ---------------------------------------------------------------- users
 
 
+def _passkeys_by_user(db: Session) -> dict[int, list[pk.Passkey]]:
+    out: dict[int, list[pk.Passkey]] = {}
+    for p in db.scalars(select(pk.Passkey).order_by(pk.Passkey.id)):
+        out.setdefault(p.user_id, []).append(p)
+    return out
+
+
 @router.get("/users")
 def users(request: Request, db: DB, user: Writer) -> HTMLResponse:
     need(user, Role.admin)
@@ -1002,6 +1042,7 @@ def users(request: Request, db: DB, user: Writer) -> HTMLResponse:
         roles=[r.name for r in Role],
         new_password="",
         new_key="",
+        passkeys=_passkeys_by_user(db),
     )
 
 
@@ -1026,6 +1067,7 @@ def user_create(
         user,
         items=list(db.scalars(select(User))),
         roles=[r.name for r in Role],
+        passkeys=_passkeys_by_user(db),
         new_password=password,
         new_key="",
     )
@@ -1056,6 +1098,17 @@ def user_update(
     return back("/admin/users", "User updated.")
 
 
+@router.post("/users/{uid}/passkeys/{passkey_id}/delete")
+def user_passkey_delete(uid: int, passkey_id: int, db: DB, user: Writer) -> RedirectResponse:
+    """Admins remove someone's passkey, e.g. when a device is lost."""
+    need(user, Role.admin)
+    passkey = db.get(pk.Passkey, passkey_id)
+    if passkey is None or passkey.user_id != uid:
+        raise HTTPException(404)
+    db.delete(passkey)
+    return back("/admin/users", f"Removed passkey {passkey.name!r} from {passkey.user.email}.")
+
+
 @router.post("/users/{uid}/api-key")
 def user_api_key(request: Request, uid: int, db: DB, user: Writer, name: Annotated[str, Form()]):
     need(user, Role.admin)
@@ -1069,6 +1122,7 @@ def user_api_key(request: Request, uid: int, db: DB, user: Writer, name: Annotat
         user,
         items=list(db.scalars(select(User))),
         roles=[r.name for r in Role],
+        passkeys=_passkeys_by_user(db),
         new_password="",
         new_key=key,
     )

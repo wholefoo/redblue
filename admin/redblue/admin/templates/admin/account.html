@@ -13,6 +13,19 @@
 {% else %}
 <p>You have no passkeys yet.</p>
 {% endif %}
+{% if not recent %}
+<h2>Add a passkey</h2>
+<p>For your security, confirm it's you first. A passkey gives lasting access to your account.</p>
+{% if has_password %}
+<form class="rb-form" method="post" action="/admin/account/confirm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="rb-btn rb-btn--primary" type="submit">Confirm</button>
+</form>
+{% else %}
+<p><a class="rb-btn" href="/admin/login?next=/admin/account">Sign in again</a></p>
+{% endif %}
+{% else %}
 <div class="rb-passkey" data-passkey="register" hidden>
   <h2>Add a passkey</h2>
   <form class="rb-form">
@@ -21,6 +34,7 @@
   </form>
   <p class="rb-error" role="alert" hidden></p>
 </div>
+{% endif %}
 <p class="rb-muted" data-passkey="unsupported" hidden>This browser doesn't support passkeys.</p>
 {% endblock %}
 {% block scripts %}<script src="/static/admin/passkeys.js" defer nonce="{{ nonce }}"></script>{% endblock %}
