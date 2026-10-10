@@ -402,8 +402,25 @@
   const pageUrl = root.dataset.previewPage;
   let previewTimer = null;
   let previewSeq = 0;
-  let previewOpen = true;
-  let previewMode = "blocks"; // or "page"
+  const WIDTHS = { desktop: 1280, mobile: 390 };
+  // Shown, Blocks or Full page, and the width are remembered in this browser (a convenience:
+  // without storage, the defaults are used).
+  const PREFS_KEY = "rb-block-preview";
+  const prefs = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  })();
+  let previewOpen = prefs.open !== false;
+  let previewMode = prefs.mode === "page" ? "page" : "blocks";
+  let previewWidth = prefs.width in WIDTHS ? prefs.width : "desktop";
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ open: previewOpen, mode: previewMode, width: previewWidth }));
+    } catch (e) { /* storage blocked: still works, just not remembered */ }
+  }
   const previewBody = el("div", { class: "rb-preview__body", inert: true });
   // allow-same-origin without allow-scripts: nothing in the page runs, and the editor can
   // keep its scroll position. Links open in a new tab, outside the sandbox.
@@ -414,8 +431,6 @@
   });
   // The page is laid out at a real device width, then scaled down to fit the panel, so the
   // site's desktop layout shows even in a narrow editor.
-  const WIDTHS = { desktop: 1280, mobile: 390 };
-  let previewWidth = "desktop";
   const previewStage = el("div", { class: "rb-preview__stage", hidden: true }, [previewFrame]);
   function fitFrame() {
     const width = WIDTHS[previewWidth];
@@ -431,9 +446,9 @@
   const widthButtons = [["desktop", "Desktop"], ["mobile", "Mobile"]].map(([key, label]) =>
     button(label, null, () => {
       previewWidth = key;
-      widthButtons.forEach((b, i) => b.setAttribute("aria-pressed", String((i === 0) === (key === "desktop"))));
-      fitFrame();
-    }, { "aria-pressed": key === previewWidth ? "true" : "false" }));
+      syncControls();
+      savePrefs();
+    }, { "data-width": key }));
   const widthGroup = el("span", { class: "rb-preview__modes rb-preview__widths", role: "group", "aria-label": "Preview width", hidden: true }, widthButtons);
   const previewNote = el("p", { class: "rb-muted", "aria-live": "polite", hidden: true });
   function note(text) {
@@ -441,6 +456,14 @@
     previewNote.hidden = !previewOpen || !text;
   }
   const view = () => (previewMode === "page" ? previewFrame : previewBody);
+  // Buttons and panels as the current choices say.
+  function syncControls() {
+    widthButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.width === previewWidth)));
+    modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === previewMode)));
+    previewToggle.textContent = previewOpen ? "Hide" : "Show";
+    previewToggle.setAttribute("aria-label", (previewOpen ? "Hide" : "Show") + " the live preview");
+    showView();
+  }
   function showView() {
     previewBody.hidden = !previewOpen || previewMode !== "blocks";
     previewStage.hidden = !previewOpen || previewMode !== "page";
@@ -450,19 +473,18 @@
   }
   const previewToggle = button("Hide", "Hide the live preview", () => {
     previewOpen = !previewOpen;
-    previewToggle.textContent = previewOpen ? "Hide" : "Show";
-    previewToggle.setAttribute("aria-label", (previewOpen ? "Hide" : "Show") + " the live preview");
-    showView();
+    syncControls();
+    savePrefs();
     if (previewOpen) refreshPreview();
   });
   const modeButtons = [["blocks", "Blocks"], ["page", "Full page"]].map(([mode, label]) =>
     button(label, null, () => {
       if (previewMode === mode) return;
       previewMode = mode;
-      modeButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(i === (mode === "page" ? 1 : 0))));
-      showView();
+      syncControls();
+      savePrefs();
       refreshPreview();
-    }, { "aria-pressed": mode === "blocks" ? "true" : "false" }));
+    }, { "data-mode": mode }));
   const preview = el("section", { class: "rb-preview", "aria-label": "Live preview" }, [
     el("div", { class: "rb-preview__head" }, [
       el("strong", { text: "Live preview" }),
@@ -570,5 +592,6 @@
   root.parentNode.appendChild(datalist);
   root.parentNode.insertBefore(preview, root.nextSibling);
   if (!showVisual()) showJSON();
-  refreshPreview();
+  syncControls(); // the remembered choices
+  if (previewOpen) refreshPreview();
 })();
