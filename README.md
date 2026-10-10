@@ -10,8 +10,8 @@ most of the work, and humans approve anything public.
 |---|---|---|
 | **Builder** | Intent → approved plan → real, ejectable FastAPI project; features land on branches | `redblue.builder` |
 | **Backend** | Data, auth (roles, sessions, API keys, OAuth, passkeys), storage, jobs, email, AI, webhooks | `redblue.core` |
-| **CMS** | Block-based, validated content with a visual block editor; writer → editor → publisher; revisions; headless API | `redblue.cms` |
-| **Template library** | 60 page types, server-rendered, accessible, JSON-LD, CWV budgets | `redblue.templates` |
+| **CMS** | Block-based, validated content; visual block editor with drag-to-reorder and a live preview (blocks or the full page, desktop or mobile width); writer → editor → publisher; revisions; headless API | `redblue.cms` |
+| **Template library** | 61 page types, server-rendered, accessible, JSON-LD, CWV budgets | `redblue.templates` |
 | **Security gate** | Red agent scans code and a preview it launches; Blue agent writes verified fixes | `redblue.gate` |
 | **Observability** | Request metrics, error grouping, uptime, OTel export, ops agent explains regressions | `redblue.observe` |
 | **Growth engine** | SEO, AEO/GEO (`llms.txt`, answer blocks, AI crawler controls), cookieless analytics, A/B tests, newsletter | `redblue.growth` |
@@ -58,6 +58,8 @@ redblue-gate fix  --path examples/vulnerable-demo --output-dir /tmp/fixes
 - The Red agent only scans previews it launches itself on loopback; there is no target-URL
   input anywhere. The Blue agent's fixes must include a regression test that fails before
   and passes after, and they are opened as PRs that are never auto-merged.
+- Nothing goes live without a publisher: drafts, previews and the editor's live preview
+  render a detached copy of the entry, so previewing never changes the public page.
 - Agents never publish, deploy, send or post. Their output is validated against schemas, and
   hostile input (CMS content, scanned code, logs) is fenced as untrusted data.
 
@@ -117,17 +119,26 @@ ruff check .
 redblue gate scan --path .   # the project dogfoods its own gate
 ```
 
-Admin pages in a real browser (skipped by plain `pytest` unless Chromium is available):
+Browser tests (skipped by plain `pytest` unless Chromium is available; set
+`RB_CHROMIUM_PATH` to use a Chromium you already have):
 
 ```bash
 pip install playwright && python -m playwright install chromium
-RB_SCREENSHOT_DIR=screenshots pytest packages/platform/tests/test_admin_screens.py
+RB_SCREENSHOT_DIR=screenshots pytest packages/platform/tests/test_admin_screens.py \
+  packages/platform/tests/test_passkeys_browser.py packages/platform/tests/test_block_editor_browser.py
 ```
 
-It opens every admin page at desktop and phone widths and fails on server errors, console
-or CSP errors, pages wider than the screen, and broken upload cards. It saves a full-page
-screenshot of each page. CI runs it on every pull request and keeps the screenshots as the
-`admin-screenshots` artifact.
+- `test_admin_screens.py` opens every admin page at desktop and phone widths and fails on
+  server errors, console or CSP errors, pages wider than the screen, and broken upload
+  cards. It saves a full-page screenshot of each page.
+- `test_passkeys_browser.py` adds a passkey with Chromium's virtual authenticator, signs
+  out, and signs back in with it.
+- `test_block_editor_browser.py` builds a post in the visual editor (adding, moving and
+  dragging blocks, picking an image), checks the live preview in both views and widths and
+  that its choices are remembered, and round-trips every block type unchanged.
+
+All three fail on console errors, including CSP violations. CI runs them on every pull
+request and keeps the screenshots as the `admin-screenshots` artifact.
 
 **Database migrations** (Alembic). The app upgrades its database at startup, and
 `redblue db upgrade` does it by hand (back up first). A database made before migrations
