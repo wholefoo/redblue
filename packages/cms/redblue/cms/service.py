@@ -230,19 +230,35 @@ def approve(db: Session, entry: Entry, user: User) -> Entry:
     return entry
 
 
-def publish_problems(db: Session, entry: Entry) -> list[str]:
+def publish_problems(
+    db: Session, entry: Entry, image_hosts: Iterable[str] | None = None
+) -> list[str]:
     problems: list[str] = []
     for check in _publish_checks:
         problems.extend(check(db, entry))
+    if image_hosts is not None:
+        # Catches images saved without the check: agent drafts, imports, seed content.
+        try:
+            check_image_hosts(entry.blocks or [], image_hosts)
+        except ValueError as exc:
+            problems.append(str(exc))
     return problems
 
 
-def publish(db: Session, entry: Entry, user: User, *, at: datetime | None = None) -> Entry:
-    """Human-confirmed publishing. Agents cannot call this: it requires a publisher user."""
+def publish(
+    db: Session,
+    entry: Entry,
+    user: User,
+    *,
+    at: datetime | None = None,
+    image_hosts: Iterable[str] | None = None,
+) -> Entry:
+    """Human-confirmed publishing. Agents cannot call this: it requires a publisher user.
+    With ``image_hosts``, images on other hosts block publishing (see ``RB_IMAGE_HOSTS``)."""
     _require(user, Role.publisher)
     if entry.status not in (Status.approved, Status.scheduled):
         raise WorkflowError("Entries must be reviewed and approved before publishing.")
-    problems = publish_problems(db, entry)
+    problems = publish_problems(db, entry, image_hosts)
     if problems:
         raise PublishBlocked(problems)
     if at and at > utcnow():

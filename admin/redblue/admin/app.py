@@ -441,6 +441,7 @@ async def content_save(entry_id: int, request: Request, db: DB, user: Writer):
 @router.post("/content/{entry_id:int}/workflow")
 def content_workflow(
     entry_id: int,
+    request: Request,
     db: DB,
     user: Writer,
     action: Annotated[str, Form()],
@@ -461,7 +462,7 @@ def content_workflow(
                 msg = "Sent back to the writer."
             case "publish":
                 at = datetime.fromisoformat(publish_at) if publish_at else None
-                cms.publish(db, e, user, at=at)
+                cms.publish(db, e, user, at=at, image_hosts=_image_hosts(request))
                 msg = "Scheduled." if e.status == Status.scheduled else "Published."
             case "unpublish":
                 cms.unpublish(db, e, user)

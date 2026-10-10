@@ -142,7 +142,9 @@ def cms_api_router() -> APIRouter:
         return _draft(e)
 
     @r.post("/entries/{entry_id}/transition")
-    def transition(entry_id: int, body: TransitionIn, db: DB, user: Writer) -> DraftOut:
+    def transition(
+        entry_id: int, body: TransitionIn, request: Request, db: DB, user: Writer
+    ) -> DraftOut:
         e = _get(db, entry_id)
         try:
             match body.action:
@@ -153,7 +155,13 @@ def cms_api_router() -> APIRouter:
                 case "request_changes":
                     service.request_changes(db, e, user, body.note)
                 case "publish":
-                    service.publish(db, e, user, at=body.at)
+                    service.publish(
+                        db,
+                        e,
+                        user,
+                        at=body.at,
+                        image_hosts=request.app.state.rb.settings.image_hosts,
+                    )
                 case "unpublish":
                     service.unpublish(db, e, user)
         except service.PermissionDenied as exc:
