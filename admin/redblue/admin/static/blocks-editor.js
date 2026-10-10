@@ -15,6 +15,7 @@
   spec.blocks.forEach((b) => { byType[b.type] = b; });
   let blocks = [];
   let insertAfter = null; // index of the card whose "Add below" picker is open
+  let dragFrom = null; // index of the card being dragged by its handle
 
   // ------------------------------------------------------------------ helpers
 
@@ -232,8 +233,28 @@
       save();
       render(to);
     };
+    // Drag by the handle to reorder; keyboard and screen reader users have the arrow buttons.
+    const handle = el("span", {
+      class: "rb-block__handle",
+      draggable: "true",
+      title: "Drag to move",
+      "aria-hidden": "true",
+      text: "⠿",
+      ondragstart: (e) => {
+        dragFrom = index;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "block " + (index + 1));
+        e.dataTransfer.setDragImage(section, 16, 16);
+        section.classList.add("is-dragging");
+      },
+      ondragend: () => {
+        dragFrom = null;
+        section.classList.remove("is-dragging");
+        markDrop(null);
+      },
+    });
     const head = el("div", { class: "rb-block__head" }, [
-      el("strong", { text: (index + 1) + ". " + name }),
+      el("span", { class: "rb-block__title" }, [handle, el("strong", { text: (index + 1) + ". " + name })]),
       el("span", { class: "rb-block__tools" }, [
         button("+", "Add a block below block " + (index + 1), () => { insertAfter = index; render(); }),
         button("↑", "Move block " + (index + 1) + " up", () => move(index - 1), { disabled: index === 0 }),
@@ -248,8 +269,53 @@
       if (def.help) body.appendChild(el("p", { class: "rb-muted", text: def.help }));
       def.fields.forEach((f) => body.appendChild(fieldControl(block, f, () => render(index))));
     }
-    return el("section", { class: "rb-block", "data-index": String(index), tabindex: "-1", "aria-label": "Block " + (index + 1) + ": " + name }, [head, body]);
+    const section = el("section", { class: "rb-block", "data-index": String(index), tabindex: "-1", "aria-label": "Block " + (index + 1) + ": " + name }, [head, body]);
+    return section;
   }
+
+  // Where a dragged block would land: before the first card whose middle is below the
+  // pointer, or at the end. Returns the position in the list as it is now.
+  function dropPosition(y) {
+    const cards = root.querySelectorAll("section.rb-block");
+    for (const c of cards) {
+      const box = c.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return parseInt(c.dataset.index, 10);
+    }
+    return cards.length;
+  }
+
+  function markDrop(position) {
+    root.querySelectorAll(".rb-drop-before, .rb-drop-after").forEach((c) => c.classList.remove("rb-drop-before", "rb-drop-after"));
+    if (position === null) return;
+    const cards = root.querySelectorAll("section.rb-block");
+    if (position < cards.length) cards[position].classList.add("rb-drop-before");
+    else if (cards.length) cards[cards.length - 1].classList.add("rb-drop-after");
+  }
+
+  root.addEventListener("dragover", (e) => {
+    if (dragFrom === null) return; // not one of our cards (e.g. a file or text): not a drop target
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    markDrop(dropPosition(e.clientY));
+  });
+  root.addEventListener("dragleave", (e) => {
+    if (!root.contains(e.relatedTarget)) markDrop(null);
+  });
+  root.addEventListener("drop", (e) => {
+    if (dragFrom === null) return;
+    e.preventDefault();
+    const from = dragFrom;
+    let to = dropPosition(e.clientY);
+    if (to > from) to -= 1; // the dragged card leaves a gap above the drop point
+    dragFrom = null;
+    markDrop(null);
+    if (to === from) return;
+    const [b] = blocks.splice(from, 1);
+    blocks.splice(to, 0, b);
+    insertAfter = null;
+    save();
+    render(to);
+  });
 
   // A type picker that adds a block at ``position``. The one under a card can be cancelled.
   function addRow(position, inline) {

@@ -53,6 +53,11 @@ select,.rb-admin input,.rb-admin textarea{font:inherit;padding:.4rem .5rem;borde
 .rb-block:focus{outline:2px solid var(--rb-primary);outline-offset:2px}
 .rb-block__head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem .75rem;border-bottom:1px solid var(--rb-border)}
 .rb-block__tools{display:flex;gap:.25rem}
+.rb-block__title{display:flex;align-items:center;gap:.4rem}
+.rb-block__handle{cursor:grab;user-select:none;color:var(--rb-muted);padding:0 .15rem;font-size:1.1rem;line-height:1}
+.rb-block.is-dragging{opacity:.5}
+.rb-block.rb-drop-before{box-shadow:0 -3px 0 var(--rb-primary)}
+.rb-block.rb-drop-after{box-shadow:0 3px 0 var(--rb-primary)}
 .rb-block__body{display:grid;gap:.5rem;padding:.75rem}
 .rb-block__body label,.rb-block-item label{display:grid;gap:.2rem}
 .rb-block-field{border:1px solid var(--rb-border);border-radius:var(--rb-radius);padding:.5rem;display:grid;gap:.5rem;min-width:0}
