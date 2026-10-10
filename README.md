@@ -9,7 +9,7 @@ most of the work, and humans approve anything public.
 | Layer | What it does | Package |
 |---|---|---|
 | **Builder** | Intent → approved plan → real, ejectable FastAPI project; features land on branches | `redblue.builder` |
-| **Backend** | Data, auth (roles, sessions, API keys, OAuth), storage, jobs, email, AI, webhooks | `redblue.core` |
+| **Backend** | Data, auth (roles, sessions, API keys, OAuth, passkeys), storage, jobs, email, AI, webhooks | `redblue.core` |
 | **CMS** | Block-based, validated content; writer → editor → publisher; revisions; headless API | `redblue.cms` |
 | **Template library** | 60 page types, server-rendered, accessible, JSON-LD, CWV budgets | `redblue.templates` |
 | **Security gate** | Red agent scans code and a preview it launches; Blue agent writes verified fixes | `redblue.gate` |

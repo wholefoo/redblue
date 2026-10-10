@@ -41,7 +41,7 @@ def test_db_commands(tmp_path, monkeypatch):
     runner = CliRunner()
     assert "unversioned" in runner.invoke(app, ["db", "current"]).output
     r = runner.invoke(app, ["db", "upgrade"])
-    assert r.exit_code == 0 and "0001_baseline (was unversioned)" in r.output
+    assert r.exit_code == 0 and "0002_passkeys (was unversioned)" in r.output
     r = runner.invoke(app, ["db", "check"])
     assert r.exit_code == 0 and "Models and migrations match." in r.output
     r = runner.invoke(app, ["db", "revision", "-m", "nothing"])

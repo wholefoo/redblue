@@ -14,6 +14,10 @@ from sqlalchemy.engine import make_url
 from redblue.core import db as dbmod
 from redblue.core.db import Base, Database
 
+HEAD = "0002_passkeys"
+# Tables added by migrations after the baseline: databases from before migrations lack them.
+LATER_TABLES = {"rb_passkeys", "rb_passkey_challenges"}
+
 URL = os.environ.get("RB_TEST_POSTGRES_URL", "")
 pytestmark = pytest.mark.skipif(not URL, reason="set RB_TEST_POSTGRES_URL to run")
 
@@ -33,17 +37,18 @@ def url():
 def _pre_migration_db(url: str) -> Database:
     db = Database(url)
     dbmod._import_models()
-    Base.metadata.create_all(db.engine)
+    old = [t for name, t in Base.metadata.tables.items() if name not in LATER_TABLES]
+    Base.metadata.create_all(db.engine, tables=old)
     return db
 
 
 def test_fresh_database_matches_the_models(url):
     db = Database(url)
     db.create_all()
-    assert db.current_revision() == "0001_baseline"
+    assert db.current_revision() == HEAD
     assert db.pending_changes() == []
     db.create_all()
-    assert db.current_revision() == "0001_baseline"
+    assert db.current_revision() == HEAD
 
 
 def test_database_from_before_migrations_is_brought_up_to_date(url):
@@ -62,7 +67,7 @@ def test_database_from_before_migrations_is_brought_up_to_date(url):
     assert insp.has_table("rb_oauth_identities")
     with db.engine.connect() as conn:
         assert conn.execute(text("SELECT email FROM rb_users")).scalar() == "a@example.com"
-    assert db.current_revision() == "0001_baseline" and db.pending_changes() == []
+    assert db.current_revision() == HEAD and db.pending_changes() == []
 
 
 def test_failed_upgrade_changes_nothing(url):
@@ -96,4 +101,4 @@ def test_workers_starting_together_upgrade_once(url):
     assert errors == []
     with create_engine(url).connect() as conn:
         rows = conn.execute(text("SELECT version_num FROM alembic_version")).all()
-    assert rows == [("0001_baseline",)]
+    assert rows == [(HEAD,)]

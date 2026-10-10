@@ -74,7 +74,7 @@ flowchart TD
 | Background jobs | Postgres-backed queue (e.g. Procrastinate) | Avoids Redis as a hard dependency |
 | Workflows | Durable orchestrator (Temporal optional; lightweight built-in default) | For long-running agent and scan workflows |
 | Storage | S3-compatible (local disk in dev) | MinIO, R2, S3, etc. |
-| Auth | Built-in sessions + OAuth providers | Passkeys as a stretch goal |
+| Auth | Built-in sessions + OAuth providers | Passkeys (built) |
 | Observability | OpenTelemetry | Exports to built-in store or any OTel backend |
 | AI | Anthropic SDK / Agent SDK | BYOK |
 | Admin UI | FastAPI + HTMX | Same stack as generated apps |

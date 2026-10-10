@@ -68,8 +68,12 @@ per-agent spend limits and logs cost. Every agent has a deterministic no-key fal
   CI runs them on SQLite and Postgres 16. On Postgres, upgrades take an advisory lock so
   several workers can start at once, and a failed upgrade rolls back completely. Other
   databases (MySQL etc.) are untested.
-- Passkeys, Temporal-backed workflows, Search Console API sync (CSV import works), and
-  Tailwind integration are not implemented yet; the base CSS is hand-written on design tokens.
+- Temporal-backed workflows, Search Console API sync (CSV import works), and Tailwind
+  integration are not implemented yet; the base CSS is hand-written on design tokens.
+- Passkeys (WebAuthn, via py_webauthn) sign people in to the admin without a password. They
+  must be discoverable and user-verified; challenges are stored server-side and work once.
+  The relying party is the host of `RB_BASE_URL`, so a site must be served from that origin
+  (and over https, except on localhost). Passwords and OAuth keep working alongside them.
 - The block editor is a validated JSON editor with preview; a visual block editor is planned.
 - Built-in DAST runs passive checks plus inert canaries. ZAP (baseline) and Nuclei run too
   when installed; the gate Action installs pinned versions with `dast_tools: "true"`, which

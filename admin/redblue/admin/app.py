@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -23,6 +23,7 @@ from redblue.cms.collections import COLLECTIONS, get_collection
 from redblue.cms.models import Entry, Media, Redirect, Status
 from redblue.cms.seo import SCHEMA_TYPES, SEOFields, seo_warnings
 from redblue.core import auth
+from redblue.core import passkeys as pk
 from redblue.core.auth import Role, User
 from redblue.core.context import get_db
 from redblue.core.security import rate_limit, safe_redirect_target
@@ -140,6 +141,112 @@ def login(
 def logout() -> RedirectResponse:
     resp = RedirectResponse("/admin/login", status_code=303)
     auth.logout(resp)
+    return resp
+
+
+# ---------------------------------------------------------------- passkeys
+# The browser side is static/passkeys.js. Each ceremony gets a one-time challenge whose
+# token travels in an HttpOnly cookie scoped to these routes.
+
+PASSKEY_PATH = "/admin/passkeys"  # the challenge cookie's path; routes below sit under it
+
+
+def _with_challenge(request: Request, body: str, token: str) -> Response:
+    resp = Response(body, media_type="application/json")
+    resp.set_cookie(
+        pk.CHALLENGE_COOKIE,
+        token,
+        max_age=int(pk.CHALLENGE_TTL.total_seconds()),
+        httponly=True,
+        samesite="strict",
+        secure=request.app.state.rb.settings.secure_cookies,
+        path=PASSKEY_PATH,
+    )
+    return resp
+
+
+def _passkey_error(exc: Exception, status: int = 400) -> JSONResponse:
+    resp = JSONResponse({"error": str(exc)}, status_code=status)
+    resp.delete_cookie(pk.CHALLENGE_COOKIE, path=PASSKEY_PATH)
+    return resp
+
+
+async def _json(request: Request) -> dict:
+    try:
+        data = await request.json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("credential"), dict):
+        raise pk.PasskeyError("The browser sent an incomplete passkey response.")
+    return data
+
+
+@router.get("/account")
+def account(request: Request, db: DB, user: Writer) -> HTMLResponse:
+    return render(request, "account.html", user, passkeys=pk.user_passkeys(db, user))
+
+
+@router.post("/passkeys/register/options")
+def passkey_register_options(request: Request, db: DB, user: Writer) -> Response:
+    try:
+        body, token = pk.registration_options(db, request.app.state.rb.settings, user)
+    except pk.PasskeyError as exc:
+        return _passkey_error(exc)
+    return _with_challenge(request, body, token)
+
+
+@router.post("/passkeys/register")
+async def passkey_register(request: Request, db: DB, user: Writer) -> JSONResponse:
+    try:
+        data = await _json(request)
+        passkey = pk.finish_registration(
+            db,
+            request.app.state.rb.settings,
+            user,
+            request.cookies.get(pk.CHALLENGE_COOKIE),
+            data["credential"],
+            str(data.get("name") or ""),
+        )
+    except pk.PasskeyError as exc:
+        return _passkey_error(exc)  # the challenge is used up either way
+    resp = JSONResponse({"ok": True, "name": passkey.name})
+    resp.delete_cookie(pk.CHALLENGE_COOKIE, path=PASSKEY_PATH)
+    return resp
+
+
+@router.post("/passkeys/{passkey_id:int}/delete")
+def passkey_delete(passkey_id: int, db: DB, user: Writer) -> RedirectResponse:
+    removed = pk.remove_passkey(db, user, passkey_id)
+    return back("/admin/account", "Passkey removed." if removed else "Passkey not found.")
+
+
+@router.post(
+    "/passkeys/login/options",
+    dependencies=[Depends(rate_limit("admin-passkey-options", 30, 300))],
+)
+def passkey_login_options(request: Request, db: DB) -> Response:
+    body, token = pk.authentication_options(db, request.app.state.rb.settings)
+    return _with_challenge(request, body, token)
+
+
+@router.post("/passkeys/login", dependencies=[Depends(rate_limit("admin-login", 10, 300))])
+async def passkey_login(request: Request, db: DB) -> JSONResponse:
+    try:
+        data = await _json(request)
+        user = pk.finish_authentication(
+            db,
+            request.app.state.rb.settings,
+            request.cookies.get(pk.CHALLENGE_COOKIE),
+            data["credential"],
+        )
+        if not user.has_role(Role.writer):
+            raise pk.PasskeyError("This account can't use the admin.")
+    except pk.PasskeyError as exc:
+        return _passkey_error(exc, 401)  # the challenge is used up either way
+    target = safe_redirect_target(str(data.get("next") or ""), "/admin")
+    resp = JSONResponse({"ok": True, "redirect": target})
+    resp.delete_cookie(pk.CHALLENGE_COOKIE, path=PASSKEY_PATH)
+    auth.login(request, resp, user)
     return resp
 
 

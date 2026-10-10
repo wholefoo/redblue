@@ -12,6 +12,11 @@
     <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
     <button class="rb-btn rb-btn--primary" type="submit">Sign in</button>
   </form>
+  <div class="rb-passkey" data-passkey="login" data-next="{{ next }}" hidden>
+    <p><button class="rb-btn" type="button">Sign in with a passkey</button></p>
+    <p class="rb-error" role="alert" hidden></p>
+  </div>
   {% for p in providers %}<p><a class="rb-btn" href="/admin/oauth/{{ p }}/start">Continue with {{ p | title }}</a></p>{% endfor %}
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/admin/passkeys.js" defer nonce="{{ nonce }}"></script>{% endblock %}

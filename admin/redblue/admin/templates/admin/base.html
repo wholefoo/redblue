@@ -17,6 +17,7 @@
 <header class="rb-admin__top">
   <a class="rb-brand" href="/admin">{{ settings.site_name }} <span class="rb-muted">admin</span></a>
   <span class="rb-muted">{{ user.email }} · {{ user.role.name }}</span>
+  <a href="/admin/account">Passkeys</a>
   <a href="/" target="_blank" rel="noopener">View site ↗</a>
   <form method="post" action="/admin/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="rb-btn" type="submit">Sign out</button></form>
 </header>
@@ -48,5 +49,6 @@
 {% else %}
 <main id="main" class="rb-admin__main">{% block anon %}{% endblock %}</main>
 {% endif %}
+{% block scripts %}{% endblock %}
 </body>
 </html>
