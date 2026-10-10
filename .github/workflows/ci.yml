@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
       - run: make dev
       - run: pip install playwright && python -m playwright install --with-deps chromium
-      - run: pytest packages/platform/tests/test_admin_screens.py
+      - run: pytest packages/platform/tests/test_admin_screens.py packages/platform/tests/test_passkeys_browser.py
         env:
           RB_SCREENSHOT_DIR: ${{ github.workspace }}/admin-screenshots
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0

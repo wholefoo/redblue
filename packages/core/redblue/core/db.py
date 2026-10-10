@@ -128,6 +128,7 @@ def _import_models() -> None:
 
     for mod in (
         "redblue.core.auth",
+        "redblue.core.passkeys",
         "redblue.core.jobs",
         "redblue.core.ai",
         "redblue.core.storage",

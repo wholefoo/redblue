@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+{% block title %}Passkeys{% endblock %}
+{% block main %}
+<h1>Passkeys</h1>
+<p class="rb-muted">Sign in with your fingerprint, face or device PIN instead of a password. Each passkey stays on its device (or in your password manager); the site only keeps its public key.</p>
+{% if passkeys %}
+<table class="rb-table"><thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"><span class="rb-sr">Remove</span></th></tr></thead><tbody>
+{% for p in passkeys %}<tr><td>{{ p.name }}{% if p.backed_up %} <span class="rb-muted">· synced</span>{% endif %}</td>
+<td>{{ p.created_at.strftime("%Y-%m-%d") }}</td>
+<td>{{ p.last_used_at.strftime("%Y-%m-%d %H:%M") if p.last_used_at else "never" }}</td>
+<td><form method="post" action="/admin/passkeys/{{ p.id }}/delete"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="rb-btn">Remove</button></form></td></tr>{% endfor %}
+</tbody></table>
+{% else %}
+<p>You have no passkeys yet.</p>
+{% endif %}
+<div class="rb-passkey" data-passkey="register" hidden>
+  <h2>Add a passkey</h2>
+  <form class="rb-form">
+    <label>Name <input name="name" maxlength="100" placeholder="Work laptop" autocomplete="off"></label>
+    <button class="rb-btn rb-btn--primary" type="submit">Add a passkey</button>
+  </form>
+  <p class="rb-error" role="alert" hidden></p>
+</div>
+<p class="rb-muted" data-passkey="unsupported" hidden>This browser doesn't support passkeys.</p>
+{% endblock %}
+{% block scripts %}<script src="/static/admin/passkeys.js" defer nonce="{{ nonce }}"></script>{% endblock %}

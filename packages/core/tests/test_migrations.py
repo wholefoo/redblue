@@ -6,12 +6,17 @@ from sqlalchemy import Column, Integer, String, Table, inspect, text
 from redblue.core import db as dbmod
 from redblue.core.db import Base, Database
 
+HEAD = "0002_passkeys"
+# Tables added by migrations after the baseline: databases from before migrations lack them.
+LATER_TABLES = {"rb_passkeys", "rb_passkey_challenges"}
+
 
 def _pre_migration_db(tmp_path) -> Database:
     """A database as older releases made it: tables from the models, no Alembic version."""
     db = Database(f"sqlite:///{tmp_path}/old.db")
     dbmod._import_models()
-    Base.metadata.create_all(db.engine)
+    old = [t for name, t in Base.metadata.tables.items() if name not in LATER_TABLES]
+    Base.metadata.create_all(db.engine, tables=old)
     return db
 
 
@@ -19,10 +24,10 @@ def test_fresh_database_matches_the_models(tmp_path):
     """Fails when a model changes without a migration: run `redblue db revision -m ...`."""
     db = Database(f"sqlite:///{tmp_path}/new.db")
     db.create_all()
-    assert db.current_revision() == "0001_baseline"
+    assert db.current_revision() == HEAD
     assert db.pending_changes() == []
     db.create_all()  # nothing left to do
-    assert db.current_revision() == "0001_baseline"
+    assert db.current_revision() == HEAD
 
 
 def test_database_from_before_migrations_is_brought_up_to_date(tmp_path):
@@ -43,7 +48,7 @@ def test_database_from_before_migrations_is_brought_up_to_date(tmp_path):
     assert insp.has_table("rb_oauth_identities")
     with db.engine.connect() as conn:  # existing rows are kept
         assert conn.execute(text("SELECT email FROM rb_users")).scalar() == "a@example.com"
-    assert db.current_revision() == "0001_baseline" and db.pending_changes() == []
+    assert db.current_revision() == HEAD and db.pending_changes() == []
 
 
 def test_missing_required_column_stops_with_a_clear_error(tmp_path):
@@ -71,11 +76,11 @@ def test_revision_writes_a_migration_that_applies(tmp_path, monkeypatch):
     try:
         assert [d[0] for d in db.pending_changes()] == ["add_table"]
         path = db.revision("Add test notes")
-        assert path.name == "0002_add_test_notes.py" and path.parent == migrations / "versions"
+        assert path.name == "0003_add_test_notes.py" and path.parent == migrations / "versions"
         script = path.read_text()
         assert "op.create_table('rb_test_notes'" in script
-        assert "down_revision = '0001_baseline'" in script
+        assert f"down_revision = '{HEAD}'" in script
         db.create_all()
-        assert db.current_revision() == "0002_add_test_notes" and db.pending_changes() == []
+        assert db.current_revision() == "0003_add_test_notes" and db.pending_changes() == []
     finally:
         Base.metadata.remove(table)
