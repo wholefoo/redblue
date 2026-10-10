@@ -150,5 +150,5 @@ def test_pages_are_not_loadable_by_other_sites_but_files_are(app, client):
         return "hi"
 
     assert client.get("/_test/page").headers["cross-origin-resource-policy"] == "same-origin"
-    assert "cross-origin-resource-policy" not in client.get("/_test/file.txt").headers
-    assert "cross-origin-resource-policy" not in client.get("/_rb/health").headers
+    for path in ("/_test/file.txt", "/_rb/health"):
+        assert client.get(path).headers["cross-origin-resource-policy"] == "cross-origin"
