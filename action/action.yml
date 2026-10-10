@@ -74,6 +74,8 @@ runs:
 
     - name: Install semgrep in its own environment
       shell: bash
+      env:
+        SEMGREP_VERSION: "1.180.0"  # pinned like Nuclei and ZAP; bump deliberately
       # Semgrep pins its own OpenTelemetry; installed next to the app (e.g. with
       # opentelemetry-sdk) it fails to import and scans nothing. Only its command goes on
       # PATH, so this venv's python and pip never shadow the ones the app uses.
@@ -81,7 +83,7 @@ runs:
         set -euo pipefail
         venv="$RUNNER_TEMP/redblue-semgrep"
         python -m venv "$venv"
-        "$venv/bin/python" -m pip install -q "semgrep>=1.70"
+        "$venv/bin/python" -m pip install -q "semgrep==${SEMGREP_VERSION}"
         mkdir -p "$RUNNER_TEMP/redblue-tools"
         # semgrep starts pysemgrep from PATH, so both must point into this venv.
         for tool in semgrep pysemgrep; do

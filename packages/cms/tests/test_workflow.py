@@ -108,3 +108,17 @@ def test_redirect_chains_collapse(db):
     with pytest.raises(service.WorkflowError):
         service.add_redirect(db, "/x", "javascript:alert(1)")
     assert db.query(Redirect).count() == 2
+
+
+def test_images_on_hosts_not_allowed_block_publishing(db, users):
+    ed, pub = users[Role.editor], users[Role.publisher]
+    image = {"type": "image", "src": "https://elsewhere.example/a.png", "alt": "A picture"}
+    # Agent drafts skip the save-time check; publishing still needs a human and catches it.
+    e = service.create_entry(db, "post", _input(blocks=[image]), None, agent="content")
+    service.submit_for_review(db, e, ed)
+    service.approve(db, e, ed)
+    with pytest.raises(service.PublishBlocked) as exc:
+        service.publish(db, e, pub, image_hosts=[])
+    assert "RB_IMAGE_HOSTS" in exc.value.problems[0] and not e.is_live
+    service.publish(db, e, pub, image_hosts=["https://elsewhere.example"])
+    assert e.is_live
