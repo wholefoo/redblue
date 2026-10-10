@@ -102,3 +102,63 @@ def test_remove_a_passkey(admin_client, app):
     r = admin_client.post(f"/admin/passkeys/{pid}/delete", data={"csrf_token": csrf(admin_client)})
     assert r.status_code == 200 and "Passkey removed." in r.text
     assert _sign_in(_fresh_client(app), device).status_code == 401
+
+
+def _stale_session(c, app):
+    """A session cookie as signed before sign-in times were recorded: valid, but not recent."""
+    from itsdangerous import URLSafeTimedSerializer
+
+    with app.state.rb.db.session() as db:
+        admin = db.scalar(select(User).where(User.email == "admin@example.com"))
+        data = {"uid": admin.id, "v": admin.session_version}
+    secret = app.state.rb.settings.secret_key.get_secret_value()
+    stale = URLSafeTimedSerializer(secret, salt="rb-session").dumps(data)
+    c.cookies.set("rb_session", stale, domain="testserver.local", path="/")  # replaces the real one
+
+
+def test_adding_a_passkey_needs_a_recent_sign_in(admin_client, app):
+    c = admin_client
+    _stale_session(c, app)
+    assert c.get("/admin", follow_redirects=False).status_code == 200  # still signed in
+    r = c.post("/admin/passkeys/register/options")
+    assert r.status_code == 403 and "confirm it's you" in r.json()["error"]
+    page = c.get("/admin/account").text
+    assert 'action="/admin/account/confirm"' in page and 'data-passkey="register"' not in page
+
+    r = c.post("/admin/account/confirm", data={"csrf_token": csrf(c), "password": "wrong"})
+    assert "Incorrect password." in r.text
+    assert c.post("/admin/passkeys/register/options").status_code == 403
+
+    r = c.post(
+        "/admin/account/confirm",
+        data={"csrf_token": csrf(c), "password": "correct-horse-battery"},
+    )
+    assert "You can add a passkey" in r.text and 'data-passkey="register"' in r.text
+    _add_passkey(c)
+
+
+def test_admins_remove_other_peoples_passkeys(admin_client, app):
+    with app.state.rb.db.session() as db:
+        writer = create_user(db, "w@example.com", "writer-password-1", Role.writer)
+        device = SoftAuthenticator(ORIGIN, RP_ID)
+        options, token = pk.registration_options(db, app.state.rb.settings, writer)
+        passkey = pk.finish_registration(
+            db, app.state.rb.settings, writer, token, device.create(options), "Lost phone"
+        )
+        wid, pid = writer.id, passkey.id
+    page = admin_client.get("/admin/users").text
+    assert "Lost phone" in page and f"/admin/users/{wid}/passkeys/{pid}/delete" in page
+
+    # A writer can't use the admin route, even on their own passkey.
+    w = _fresh_client(app)
+    w.post(
+        "/admin/login",
+        data={"email": "w@example.com", "password": "writer-password-1", "csrf_token": csrf(w)},
+    )
+    assert w.post(f"/admin/users/{wid}/passkeys/{pid}/delete").status_code == 403
+    assert admin_client.post(f"/admin/users/{wid + 99}/passkeys/{pid}/delete").status_code == 404
+
+    r = admin_client.post(f"/admin/users/{wid}/passkeys/{pid}/delete")
+    assert r.status_code == 200 and "Removed passkey" in r.text and "w@example.com." in r.text
+    assert f"/passkeys/{pid}/delete" not in r.text
+    assert _sign_in(_fresh_client(app), device).status_code == 401

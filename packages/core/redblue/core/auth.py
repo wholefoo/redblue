@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import secrets
+import time
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
@@ -133,7 +134,10 @@ def _serializer(request: Request) -> URLSafeTimedSerializer:
 
 def login(request: Request, response: Response, user: User) -> None:
     settings = get_platform(request).settings
-    token = _serializer(request).dumps({"uid": user.id, "v": user.session_version})
+    # "t": when this sign-in happened, for actions that need a recent one (seconds_since_sign_in).
+    token = _serializer(request).dumps(
+        {"uid": user.id, "v": user.session_version, "t": int(time.time())}
+    )
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -143,6 +147,22 @@ def login(request: Request, response: Response, user: User) -> None:
         secure=settings.secure_cookies,
         path="/",
     )
+
+
+def seconds_since_sign_in(request: Request) -> float | None:
+    """How long ago the current session signed in; None if unknown (no session, or one made
+    before sign-in times were recorded). Callers check the session is valid themselves."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    try:
+        data = _serializer(request).loads(
+            token, max_age=get_platform(request).settings.session_max_age
+        )
+    except BadSignature:
+        return None
+    signed_in = data.get("t")
+    return time.time() - signed_in if isinstance(signed_in, int) else None
 
 
 def logout(response: Response) -> None:
