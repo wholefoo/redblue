@@ -236,3 +236,68 @@ def test_block_preview_renders_like_the_site_and_validates_like_a_save(admin_cli
     anon.get("/admin/login")
     anon.headers["x-csrf-token"] = anon.cookies["rb_csrf"]
     assert anon.post(url, json={"blocks": []}, follow_redirects=False).status_code == 303
+
+
+def _publish(c, title, text):
+    r = c.post(
+        "/admin/content/new?collection=post",
+        data={
+            "csrf_token": csrf(c),
+            "title": title,
+            "blocks": json.dumps([{"type": "paragraph", "text": text}]),
+            "data": "{}",
+        },
+        follow_redirects=True,
+    )
+    eid = int(re.search(r"/admin/content/(\d+)/workflow", r.text).group(1))
+    for action in ("submit", "approve", "publish"):
+        c.post(f"/admin/content/{eid}/workflow", data={"csrf_token": csrf(c), "action": action})
+    return eid
+
+
+def test_previewing_a_draft_never_changes_the_live_page(admin_client):
+    c = admin_client
+    eid = _publish(c, "Live one", "Published text")
+    c.post(
+        f"/admin/content/{eid}",
+        data={
+            "csrf_token": csrf(c),
+            "title": "Live one",
+            "slug": "live-one",
+            "blocks": json.dumps([{"type": "paragraph", "text": "Unreviewed draft"}]),
+            "data": "{}",
+        },
+    )
+    r = c.get(f"/admin/content/{eid}/preview")
+    assert "Unreviewed draft" in r.text and r.headers["x-robots-tag"] == "noindex"
+    form = {"title": "Renamed", "slug": "other-slug", "blocks": "[]", "data": "{}"}
+    c.post(f"/admin/content/preview-page?entry_id={eid}", data=form)
+    live = c.get("/blog/live-one")
+    assert "Published text" in live.text and "Unreviewed draft" not in live.text
+    assert c.get("/blog/other-slug").status_code == 404
+
+
+def test_full_page_preview_renders_the_unsaved_form(admin_client):
+    c = admin_client
+    url = "/admin/content/preview-page?collection=post"
+    form = {
+        "title": "Heat <pumps>",
+        "summary": "A summary",
+        "blocks": json.dumps([{"type": "heading", "text": "First", "level": 3}]),
+        "data": "{}",
+        "tags": "energy",
+    }
+    html = c.post(url, data=form).json()["html"]
+    assert html.lower().startswith("<!doctype html>")
+    assert "Heat &lt;pumps&gt;" in html and "First</h3>" in html  # title and blocks, escaped
+    assert "<header" in html and "<footer" in html  # the site's layout around them
+    assert "Untitled" in c.post(url, data={**form, "title": ""}).json()["html"]
+
+    bad = {**form, "blocks": json.dumps([{"type": "paragraph", "text": "[x](javascript:1)"}])}
+    assert "Unsafe or invalid link" in c.post(url, data=bad).json()["errors"][0]
+    assert "valid JSON" in c.post(url, data={**form, "data": "{oops"}).json()["errors"][0]
+    assert c.post("/admin/content/preview-page?collection=nope", data=form).status_code == 404
+    assert c.post("/admin/content/preview-page?entry_id=999", data=form).status_code == 404
+    assert c.post(url, data=form, headers={"x-csrf-token": "wrong"}).status_code == 403
+    assert c.get("/admin/content").status_code == 200
+    assert "Heat" not in c.get("/admin/content").text  # nothing was stored

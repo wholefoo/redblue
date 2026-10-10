@@ -392,35 +392,63 @@
   }
 
   // ------------------------------------------------------------------ live preview
-  // The server validates the blocks as a save would and renders them with the public
-  // site's templates. The preview is view-only (inert), and nothing is stored.
+  // The server validates as a save would and renders with the public site's templates:
+  // the blocks alone, or the whole page (header, title, layout) from the form as it is now.
+  // Both are view-only (the blocks are inert; the page is a sandboxed frame without
+  // scripts), and nothing is stored.
 
   const PREVIEW_DELAY = 400;
+  const form = textarea.form;
+  const pageUrl = root.dataset.previewPage;
   let previewTimer = null;
   let previewSeq = 0;
   let previewOpen = true;
+  let previewMode = "blocks"; // or "page"
   const previewBody = el("div", { class: "rb-preview__body", inert: true });
+  // allow-same-origin without allow-scripts: nothing in the page runs, and the editor can
+  // keep its scroll position. Links open in a new tab, outside the sandbox.
+  const previewFrame = el("iframe", {
+    class: "rb-preview__frame",
+    title: "Full-page preview",
+    sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
+    hidden: true,
+  });
   const previewNote = el("p", { class: "rb-muted", "aria-live": "polite", hidden: true });
   function note(text) {
     previewNote.textContent = text;
     previewNote.hidden = !previewOpen || !text;
   }
+  const view = () => (previewMode === "page" ? previewFrame : previewBody);
+  function showView() {
+    previewBody.hidden = !previewOpen || previewMode !== "blocks";
+    previewFrame.hidden = !previewOpen || previewMode !== "page";
+    note(previewNote.textContent);
+  }
   const previewToggle = button("Hide", "Hide the live preview", () => {
     previewOpen = !previewOpen;
     previewToggle.textContent = previewOpen ? "Hide" : "Show";
     previewToggle.setAttribute("aria-label", (previewOpen ? "Hide" : "Show") + " the live preview");
-    previewBody.hidden = !previewOpen;
-    note(previewNote.textContent);
+    showView();
     if (previewOpen) refreshPreview();
   });
+  const modeButtons = [["blocks", "Blocks"], ["page", "Full page"]].map(([mode, label]) =>
+    button(label, null, () => {
+      if (previewMode === mode) return;
+      previewMode = mode;
+      modeButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(i === (mode === "page" ? 1 : 0))));
+      showView();
+      refreshPreview();
+    }, { "aria-pressed": mode === "blocks" ? "true" : "false" }));
   const preview = el("section", { class: "rb-preview", "aria-label": "Live preview" }, [
     el("div", { class: "rb-preview__head" }, [
       el("strong", { text: "Live preview" }),
-      el("small", { class: "rb-muted", text: "How the blocks will look. Saved only when you save." }),
+      el("small", { class: "rb-muted", text: "How it will look. Saved only when you save." }),
+      el("span", { class: "rb-preview__modes", role: "group", "aria-label": "Preview" }, modeButtons),
       previewToggle,
     ]),
     previewNote,
     previewBody,
+    previewFrame,
   ]);
 
   function csrfToken() {
@@ -437,41 +465,75 @@
     previewTimer = setTimeout(refreshPreview, PREVIEW_DELAY);
   }
 
+  function request(list) {
+    const headers = { "X-CSRF-Token": csrfToken() };
+    if (previewMode === "page" && pageUrl && form) {
+      return fetch(pageUrl, {
+        method: "POST", credentials: "same-origin", headers: headers,
+        body: new URLSearchParams(new FormData(form)),
+      });
+    }
+    headers["Content-Type"] = "application/json";
+    return fetch("/admin/content/preview-blocks", {
+      method: "POST", credentials: "same-origin", headers: headers,
+      body: JSON.stringify({ blocks: list }),
+    });
+  }
+
+  // The page without its scripts (they wouldn't run in the sandbox anyway).
+  function showPage(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll("script").forEach((s) => s.remove());
+    doc.head.prepend(el("base", { target: "_blank" }));
+    let y = 0;
+    try { y = previewFrame.contentWindow.scrollY; } catch (e) { /* not loaded yet */ }
+    previewFrame.addEventListener("load", () => {
+      try { previewFrame.contentWindow.scrollTo(0, y); } catch (e) { /* ignore */ }
+    }, { once: true });
+    previewFrame.srcdoc = "<!doctype html>\n" + doc.documentElement.outerHTML;
+  }
+
   async function refreshPreview() {
     const seq = ++previewSeq;
+    const target = view();
     let list;
     try {
       list = JSON.parse(textarea.value.trim() || "[]");
     } catch (e) {
       note("Fix the JSON to update the preview.");
-      previewBody.classList.add("is-stale");
+      target.classList.add("is-stale");
       return;
     }
     let data;
     try {
-      const resp = await fetch("/admin/content/preview-blocks", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
-        body: JSON.stringify({ blocks: list }),
-      });
-      data = await resp.json();
+      data = await (await request(list)).json();
     } catch (e) {
       data = { errors: ["The preview couldn't be loaded."] };
     }
-    if (seq !== previewSeq) return; // a newer edit has been sent since
+    if (seq !== previewSeq) return; // a newer edit (or a switch of view) since
     if (data.errors) {
       note("Not updated until this is fixed: " + data.errors.join(" · "));
-      previewBody.classList.add("is-stale");
+      target.classList.add("is-stale");
       return;
     }
     note("");
     previewBody.classList.remove("is-stale");
-    const doc = new DOMParser().parseFromString(data.html, "text/html");
-    previewBody.replaceChildren(...doc.body.childNodes);
+    previewFrame.classList.remove("is-stale");
+    if (target === previewFrame) {
+      showPage(data.html);
+    } else {
+      const doc = new DOMParser().parseFromString(data.html, "text/html");
+      previewBody.replaceChildren(...doc.body.childNodes);
+    }
   }
 
   textarea.addEventListener("input", schedulePreview);
+  // The full page also shows the title, summary and the other fields.
+  if (form) {
+    ["input", "change"].forEach((type) => form.addEventListener(type, (e) => {
+      if (previewMode === "page" && e.target !== textarea) schedulePreview();
+    }));
+  }
 
   toggle.addEventListener("click", () => (root.hidden ? showVisual() : showJSON()));
   const datalist = el("datalist", { id: "rb-media-list" },

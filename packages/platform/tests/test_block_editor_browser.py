@@ -1,8 +1,8 @@
-"""The visual block editor in real Chromium: build a post by clicking and dragging, save it,
-and check the stored blocks; open an entry using every block type and save it unchanged through
-the editor (the JSON must come back identical); bad JSON in the raw view is refused. Fails on
-console errors, including CSP violations. Skipped without Playwright and Chromium, like
-test_admin_screens."""
+"""The visual block editor in real Chromium: build a post by clicking and dragging, watch the
+live preview (blocks and full page), save it, and check the stored blocks; open an entry using
+every block type and save it unchanged through the editor (the JSON must come back
+identical); bad JSON in the raw view is refused. Fails on console errors, including CSP
+violations. Skipped without Playwright and Chromium, like test_admin_screens."""
 
 from __future__ import annotations
 
@@ -254,7 +254,25 @@ def test_block_editor(live):
         )
         assert preview.locator("p", has_text="Second, after the move.").is_visible()
 
+        # The full page: the site's header and layout around the title and blocks, from the
+        # form as it is now, in a sandboxed frame without scripts.
         page.fill('input[name="title"]', "Made visually")
+        page.get_by_role("button", name="Full page").click()
+        frame = page.frame_locator("iframe.rb-preview__frame")
+        frame.locator("h1", has_text="Made visually").wait_for()
+        assert frame.locator("h3", has_text="First").is_visible()
+        assert frame.locator("header").count() and frame.locator("footer").count()
+        assert frame.locator("script").count() == 0
+        assert frame.locator("body").evaluate("b => getComputedStyle(b).margin") == "0px"
+        assert not preview.is_visible()
+        page.fill('input[name="title"]', "Made visually, live")
+        frame.locator("h1", has_text="Made visually, live").wait_for()
+        page.fill('input[name="title"]', "Made visually")
+        frame.locator("h1", has_text=re.compile(r"^\s*Made visually\s*$")).wait_for()
+        page.get_by_role("button", name="Blocks").click()
+        preview.locator("h3", has_text="First").wait_for()
+        assert page.locator("iframe.rb-preview__frame").is_hidden()
+
         page.get_by_role("button", name="Create draft").click()
         page.wait_for_url(re.compile(r".*/admin/content/\d+\?msg="))
         new_id = int(re.search(r"/admin/content/(\d+)", page.url).group(1))
