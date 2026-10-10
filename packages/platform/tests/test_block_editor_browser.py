@@ -288,6 +288,7 @@ def test_block_editor(live):
         frame.locator("h1", has_text="Made visually, live").wait_for()
         page.fill('input[name="title"]', "Made visually")
         frame.locator("h1", has_text=re.compile(r"^\s*Made visually\s*$")).wait_for()
+        page.get_by_role("button", name="Mobile").click()  # remembered for step 2
         page.get_by_role("button", name="Blocks").click()
         preview.locator("h3", has_text="First").wait_for()
         assert page.locator("iframe.rb-preview__frame").is_hidden()
@@ -305,6 +306,23 @@ def test_block_editor(live):
 
         # 2. Every block type round-trips unchanged through the editor.
         page.goto(f"{base}/admin/content/{every_id}")
+
+        # The preview's choices are remembered in this browser: view, width, shown or hidden.
+        def pressed(name):
+            return page.get_by_role("button", name=name).get_attribute("aria-pressed")
+
+        assert pressed("Blocks") == "true"
+        page.get_by_role("button", name="Full page").click()
+        assert pressed("Mobile") == "true"
+        page.reload()
+        assert pressed("Full page") == "true" and pressed("Mobile") == "true"
+        frame = page.frame_locator("iframe.rb-preview__frame")
+        frame.locator("h1", has_text="Every block").wait_for()
+        laid_out_at(390)
+        page.get_by_role("button", name="Hide the live preview").click()
+        page.reload()
+        assert page.get_by_role("button", name="Show the live preview").is_visible()
+        assert page.locator(".rb-preview__stage").is_hidden()
         assert page.locator("section.rb-block").count() == len(EVERY_BLOCK)
         page.get_by_role("button", name="Edit as JSON").click()  # writes the editor's JSON
         assert json.loads(page.locator('textarea[name="blocks"]').input_value()) == stored
