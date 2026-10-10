@@ -14,6 +14,7 @@
   const byType = {};
   spec.blocks.forEach((b) => { byType[b.type] = b; });
   let blocks = [];
+  let insertAfter = null; // index of the card whose "Add below" picker is open
 
   // ------------------------------------------------------------------ helpers
 
@@ -76,16 +77,16 @@
     const label = field.label + (field.required ? "" : " (optional)");
     const hint = field.hint ? el("small", { class: "rb-muted", text: field.hint }) : null;
     switch (field.kind) {
-      case "text":
-      case "media": {
+      case "text": {
         const input = el("input", {
           value: value === undefined ? "" : value,
           maxlength: field.maxlength,
-          list: field.kind === "media" ? "rb-media-list" : null,
           oninput: (e) => assign(obj, field, e.target.value),
         });
         return el("label", {}, [document.createTextNode(label + " "), input, hint]);
       }
+      case "media":
+        return mediaPicker(obj, field, label);
       case "textarea": {
         const area = el("textarea", {
           rows: 3,
@@ -124,6 +125,48 @@
       default:
         return el("p", { class: "rb-error", text: "Unknown field kind: " + field.kind });
     }
+  }
+
+  // An image from the media library: type to filter, or click a thumbnail.
+  const MAX_THUMBS = 12;
+  const mediaUrl = (key) => "/media/" + encodeURIComponent(key);
+
+  function mediaPicker(obj, field, label) {
+    const input = el("input", { value: obj[field.name] || "", list: "rb-media-list", autocomplete: "off" });
+    const preview = el("div", { class: "rb-media-preview" });
+    const thumbs = el("div", { class: "rb-media-thumbs", role: "group", "aria-label": "Images from the media library" });
+
+    function choose(key) {
+      input.value = key;
+      assign(obj, field, key);
+      update();
+    }
+
+    function update() {
+      const key = input.value.trim();
+      const chosen = spec.media.find((m) => m.key === key);
+      preview.replaceChildren(chosen
+        ? el("img", { src: mediaUrl(chosen.key), alt: chosen.label, loading: "lazy" })
+        : document.createTextNode(""));
+      const query = chosen ? "" : key.toLowerCase();
+      const matches = spec.media
+        .filter((m) => !query || m.key.toLowerCase().includes(query) || m.label.toLowerCase().includes(query))
+        .slice(0, MAX_THUMBS);
+      thumbs.replaceChildren(...matches.map((m) => el("button", {
+        type: "button",
+        class: "rb-media-thumb" + (m.key === key ? " is-chosen" : ""),
+        "aria-label": "Use image: " + m.label,
+        "aria-pressed": m.key === key ? "true" : "false",
+        onclick: () => choose(m.key),
+      }, [el("img", { src: mediaUrl(m.key), alt: "", loading: "lazy" })])));
+    }
+
+    input.addEventListener("input", () => { assign(obj, field, input.value); update(); });
+    update();
+    const help = spec.media.length ? null : el("small", { class: "rb-muted", text: "Upload images under Media to pick them here." });
+    return el("div", { class: "rb-media-field" }, [
+      el("label", {}, [document.createTextNode(label + " "), input]), help, preview, thumbs,
+    ]);
   }
 
   function stringList(obj, field, label, hint, onStructure) {
@@ -191,6 +234,7 @@
     const head = el("div", { class: "rb-block__head" }, [
       el("strong", { text: (index + 1) + ". " + name }),
       el("span", { class: "rb-block__tools" }, [
+        button("+", "Add a block below block " + (index + 1), () => { insertAfter = index; render(); }),
         button("↑", "Move block " + (index + 1) + " up", () => move(index - 1), { disabled: index === 0 }),
         button("↓", "Move block " + (index + 1) + " down", () => move(index + 1), { disabled: index === blocks.length - 1 }),
         button("✕", "Remove block " + (index + 1), () => { blocks.splice(index, 1); save(); render(Math.min(index, blocks.length - 1)); }),
@@ -206,22 +250,41 @@
     return el("section", { class: "rb-block", "data-index": String(index), tabindex: "-1", "aria-label": "Block " + (index + 1) + ": " + name }, [head, body]);
   }
 
+  // A type picker that adds a block at ``position``. The one under a card can be cancelled.
+  function addRow(position, inline) {
+    const pick = el("select", {
+      "aria-label": inline ? "Type of block to add below block " + position : "Block type",
+    }, spec.blocks.map((b) => el("option", { value: b.type, text: b.label })));
+    const row = el("div", { class: "rb-block-add" + (inline ? " rb-block-add--inline" : "") }, [
+      pick,
+      button("Add block", inline ? "Add block below block " + position : "Add block", () => {
+        const def = byType[pick.value];
+        blocks.splice(position, 0, Object.assign({ type: def.type }, newItem(def.fields)));
+        insertAfter = null;
+        save();
+        render(position);
+      }, { class: "rb-btn" }),
+      inline ? button("Cancel", "Cancel adding a block", () => { insertAfter = null; render(position - 1); }) : null,
+    ]);
+    return { row: row, pick: pick };
+  }
+
   function render(focusIndex) {
     root.replaceChildren();
     if (!blocks.length) root.appendChild(el("p", { class: "rb-muted", text: "No blocks yet. Add one below." }));
-    blocks.forEach((b, i) => root.appendChild(card(b, i)));
-    const pick = el("select", { "aria-label": "Block type" },
-      spec.blocks.map((b) => el("option", { value: b.type, text: b.label })));
-    root.appendChild(el("div", { class: "rb-block-add" }, [
-      pick,
-      button("Add block", "Add block", () => {
-        const def = byType[pick.value];
-        blocks.push(Object.assign({ type: def.type }, newItem(def.fields)));
-        save();
-        render(blocks.length - 1);
-      }, { class: "rb-btn" }),
-    ]));
-    if (focusIndex !== undefined && focusIndex >= 0) {
+    let inlinePick = null;
+    blocks.forEach((b, i) => {
+      root.appendChild(card(b, i));
+      if (insertAfter === i) {
+        const add = addRow(i + 1, true);
+        root.appendChild(add.row);
+        inlinePick = add.pick;
+      }
+    });
+    root.appendChild(addRow(blocks.length, false).row);
+    if (inlinePick) {
+      inlinePick.focus();
+    } else if (focusIndex !== undefined && focusIndex >= 0) {
       const target = root.querySelector('[data-index="' + focusIndex + '"]');
       if (target) target.focus();
     }
